@@ -18,3 +18,6 @@ Client:
 npm install
 npm run dev
 ```
+
+
+Note: TireID uses SHA-256 (first 12 hex) for deterministic IDs.
