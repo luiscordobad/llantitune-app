@@ -1,20 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 
-export default function CustomerDetail({ params }: { params: { id: string } }) {
+export default function CustomerDetail() {
+  const params = useParams<{ id: string }>();
+  const id = params?.id;
+
   const [data, setData] = useState<any>(null);
   const [status, setStatus] = useState("Cargando...");
 
   useEffect(() => {
+    if (!id) return;
     (async () => {
-      const res = await fetch("/api/admin/customer?id=" + encodeURIComponent(params.id));
+      const res = await fetch("/api/admin/customer?id=" + encodeURIComponent(id));
       const d = await res.json();
       if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
       setData(d);
       setStatus("OK ✅");
     })();
-  }, [params.id]);
+  }, [id]);
 
   if (!data) return <div>{status}</div>;
 
