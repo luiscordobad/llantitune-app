@@ -135,7 +135,7 @@ export default function AdminOrders() {
                     </label>
 
                     <label>Anticipo (MXN)
-                      <input type="number" value={o.deposit_amount ?? ""} onChange={e => patchOrder(o.order_id, { deposit_amount: e.target.value ? Number(e.target.value) : null })} />
+                      <input type="text" inputMode="numeric" pattern="[0-9]*" value={o.deposit_amount ?? ""} onChange={e => patchOrder(o.order_id, { deposit_amount: e.target.value ? Number(e.target.value) : null })} />
                     </label>
 
                     <label>Asignado a (mecánico)

@@ -48,10 +48,10 @@ export default function SettingsPage() {
       <p style={{ color: "#555" }}>Estos valores se usan como defaults en el cotizador.</p>
 
       <div style={{ display: "grid", gap: 12, maxWidth: 420 }}>
-        <label>Markup default % <input type="number" value={markup} onChange={e => setMarkup(Number(e.target.value))} /></label>
-        <label>Instalación por llanta <input type="number" value={install} onChange={e => setInstall(Number(e.target.value))} /></label>
-        <label>Extras por llanta <input type="number" value={extras} onChange={e => setExtras(Number(e.target.value))} /></label>
-        <label>Stock mínimo <input type="number" value={minStock} onChange={e => setMinStock(Number(e.target.value))} /></label>
+        <label>Markup default % <input type="text" inputMode="numeric" pattern="[0-9]*" value={markup} onChange={e => setMarkup(Number(e.target.value))} /></label>
+        <label>Instalación por llanta <input type="text" inputMode="numeric" pattern="[0-9]*" value={install} onChange={e => setInstall(Number(e.target.value))} /></label>
+        <label>Extras por llanta <input type="text" inputMode="numeric" pattern="[0-9]*" value={extras} onChange={e => setExtras(Number(e.target.value))} /></label>
+        <label>Stock mínimo <input type="text" inputMode="numeric" pattern="[0-9]*" value={minStock} onChange={e => setMinStock(Number(e.target.value))} /></label>
 
         <button onClick={save} style={{ width: 180 }}>Guardar</button>
       </div>

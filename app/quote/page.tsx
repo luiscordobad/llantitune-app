@@ -163,17 +163,17 @@ async function downloadPDF() {
 
       <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
         <label>Markup % (interno)
-          <input type="number" value={markup} onChange={e => setMarkup(Number(e.target.value))} />
+          <input type="text" inputMode="numeric" pattern="[0-9]*" value={markup} onChange={e => setMarkup(Number(e.target.value))} />
         </label>
         <label>Stock mínimo (interno)
-          <input type="number" value={minStock} onChange={e => setMinStock(Number(e.target.value))} />
+          <input type="text" inputMode="numeric" pattern="[0-9]*" value={minStock} onChange={e => setMinStock(Number(e.target.value))} />
         </label>
 
         <label>Instalación por llanta (interno)
-          <input type="number" value={install} onChange={e => setInstall(Number(e.target.value))} />
+          <input type="text" inputMode="numeric" pattern="[0-9]*" value={install} onChange={e => setInstall(Number(e.target.value))} />
         </label>
         <label>Extras por llanta (interno)
-          <input type="number" value={extras} onChange={e => setExtras(Number(e.target.value))} />
+          <input type="text" inputMode="numeric" pattern="[0-9]*" value={extras} onChange={e => setExtras(Number(e.target.value))} />
         </label>
 
         <label>Cliente (nombre)
@@ -190,7 +190,7 @@ async function downloadPDF() {
           <input value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="cliente@email.com" />
         </label>
       <label>Anticipo (MXN) (interno)
-  <input type="number" value={depositAmount} onChange={e => setDepositAmount(e.target.value === "" ? "" : Number(e.target.value))} />
+  <input type="text" inputMode="numeric" pattern="[0-9]*" value={depositAmount} onChange={e => setDepositAmount(e.target.value === "" ? "" : Number(e.target.value))} />
 </label>
 <label>Fecha promesa (interno)
   <input type="date" value={promisedAt} onChange={e => setPromisedAt(e.target.value)} />
@@ -211,7 +211,7 @@ async function downloadPDF() {
         </label>
         <label style={{ gridColumn: "2 / 3" }}>
           Cantidad solicitada
-          <input type="number" min={1} step={1} value={lineQty}
+          <input type="text" inputMode="numeric" pattern="[0-9]*" min={1} step={1} value={lineQty}
             onChange={e => setLineQty(Math.max(1, Number(e.target.value || 1)))} style={{ width: "100%" }} />
         </label>
         <div style={{ gridColumn: "3 / 4", display: "flex", alignItems: "flex-end" }}>
