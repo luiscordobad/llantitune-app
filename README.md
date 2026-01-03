@@ -21,3 +21,7 @@ npm run dev
 
 
 Note: TireID uses SHA-256 (first 12 hex) for deterministic IDs.
+
+
+## Supabase migration (multi-size quotes)
+Run `supabase_migrations/002_quote_lines.sql` in Supabase SQL Editor.

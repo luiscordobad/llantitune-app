@@ -7,32 +7,71 @@ function enc(s: string) {
   return encodeURIComponent(s);
 }
 
-export default function QuotePage() {
-  const [sizeInput, setSizeInput] = useState("");
-  const size = useMemo(() => normalizeSizeAny(sizeInput) ?? "", [sizeInput]);
+type Line = {
+  sizeInput: string;
+  size: string;
+  qty: number;
+};
 
-  const [qty, setQty] = useState(4);
+export default function QuotePage() {
+  // Global settings (applies to all lines)
   const [markup, setMarkup] = useState(30);
   const [install, setInstall] = useState(1000);
   const [extras, setExtras] = useState(1000);
   const [minStock, setMinStock] = useState(8);
 
+  // Customer
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [vehicle, setVehicle] = useState("");
 
+  // Lines (cart)
+  const [lineSizeInput, setLineSizeInput] = useState("");
+  const normalized = useMemo(() => normalizeSizeAny(lineSizeInput) ?? "", [lineSizeInput]);
+  const [lineQty, setLineQty] = useState<number>(4);
+  const [lines, setLines] = useState<Line[]>([]);
+
   const [result, setResult] = useState<any>(null);
   const [status, setStatus] = useState<string>("");
 
+  function addLine() {
+    const size = normalized;
+    if (!size) return;
+    const qty = Math.max(1, Number(lineQty || 1));
+    setLines(prev => [...prev, { sizeInput: lineSizeInput, size, qty }]);
+    setLineSizeInput("");
+    setLineQty(4);
+  }
+
+  function removeLine(idx: number) {
+    setLines(prev => prev.filter((_, i) => i !== idx));
+  }
+
   async function runQuote() {
+    if (!lines.length) {
+      setStatus("Agrega al menos 1 medida a la cotización.");
+      return;
+    }
     setStatus("Cotizando...");
     setResult(null);
+
     const res = await fetch("/api/quote", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ size, qty, markup, install, extras, minStock, customerName, customerEmail, customerPhone, vehicle })
+      body: JSON.stringify({
+        lines: lines.map(l => ({ size: l.size, qty: l.qty })),
+        markup,
+        install,
+        extras,
+        minStock,
+        customerName,
+        customerEmail,
+        customerPhone,
+        vehicle
+      })
     });
+
     const data = await res.json();
     if (!res.ok) {
       setStatus(`Error: ${data.error ?? "unknown"}`);
@@ -62,7 +101,7 @@ export default function QuotePage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `Llantitune_Cotizacion_${size || "size"}.pdf`;
+    a.download = `Llantitune_Cotizacion_${result.quoteId}.pdf`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -73,39 +112,100 @@ export default function QuotePage() {
 
       <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
         <label>
-          Tamaño (ej. 215/55R16 o 165/60/R13)
-          <input value={sizeInput} onChange={e => setSizeInput(e.target.value)} style={{ width: "100%" }} />
-          <div style={{ fontSize: 12, color: "#666" }}>Normalizado: <b>{size || "-"}</b></div>
+          Markup %
+          <input type="number" value={markup} onChange={e => setMarkup(Number(e.target.value))} />
+        </label>
+        <label>
+          Stock mínimo (regla Llantitune)
+          <input type="number" value={minStock} onChange={e => setMinStock(Number(e.target.value))} />
         </label>
 
         <label>
-          Cantidad
-          <select value={qty} onChange={e => setQty(Number(e.target.value))}>
-            <option value={2}>2</option>
-            <option value={4}>4</option>
-          </select>
+          Instalación por llanta
+          <input type="number" value={install} onChange={e => setInstall(Number(e.target.value))} />
+        </label>
+        <label>
+          Extras por llanta
+          <input type="number" value={extras} onChange={e => setExtras(Number(e.target.value))} />
         </label>
 
-        <label>Markup % <input type="number" value={markup} onChange={e => setMarkup(Number(e.target.value))} /></label>
-        <label>Stock mínimo <input type="number" value={minStock} onChange={e => setMinStock(Number(e.target.value))} /></label>
+        <label>
+          Cliente (nombre)
+          <input value={customerName} onChange={e => setCustomerName(e.target.value)} />
+        </label>
+        <label>
+          Vehículo (opcional)
+          <input value={vehicle} onChange={e => setVehicle(e.target.value)} placeholder="Ej. Focus" />
+        </label>
 
-        <label>Instalación por llanta <input type="number" value={install} onChange={e => setInstall(Number(e.target.value))} /></label>
-        <label>Extras por llanta <input type="number" value={extras} onChange={e => setExtras(Number(e.target.value))} /></label>
-
-        <label>Cliente (nombre) <input value={customerName} onChange={e => setCustomerName(e.target.value)} /></label>
-        <label>Vehículo (opcional) <input value={vehicle} onChange={e => setVehicle(e.target.value)} placeholder="Ej. Mazda 3 2018" /></label>
-
-        <label>WhatsApp (10 dígitos MX) (opcional) <input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="Ej. 4421234567" /></label>
-        <label>Email (opcional) <input value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="cliente@email.com" /></label>
+        <label>
+          WhatsApp (10 dígitos MX) (opcional)
+          <input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="Ej. 4421234567" />
+        </label>
+        <label>
+          Email (opcional)
+          <input value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="cliente@email.com" />
+        </label>
       </div>
 
-      <button style={{ marginTop: 12 }} onClick={runQuote}>Cotizar</button>
+      <hr style={{ margin: "18px 0" }} />
+
+      <h3>Medidas en la cotización</h3>
+      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 160px 140px" }}>
+        <label style={{ gridColumn: "1 / 2" }}>
+          Tamaño (ej. 215/55R16 o 165/60/R13)
+          <input value={lineSizeInput} onChange={e => setLineSizeInput(e.target.value)} style={{ width: "100%" }} />
+          <div style={{ fontSize: 12, color: "#666" }}>Normalizado: <b>{normalized || "-"}</b></div>
+        </label>
+        <label style={{ gridColumn: "2 / 3" }}>
+          Cantidad
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={lineQty}
+            onChange={e => setLineQty(Math.max(1, Number(e.target.value || 1)))}
+            style={{ width: "100%" }}
+          />
+        </label>
+        <div style={{ gridColumn: "3 / 4", display: "flex", alignItems: "flex-end" }}>
+          <button onClick={addLine} style={{ width: "100%" }}>Agregar</button>
+        </div>
+      </div>
+
+      {lines.length ? (
+        <div style={{ marginTop: 12 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>Tamaño</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>Cantidad</th>
+                <th style={{ borderBottom: "1px solid #ddd", padding: 8 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l, idx) => (
+                <tr key={idx}>
+                  <td style={{ padding: 8, borderBottom: "1px solid #eee" }}>{l.size}</td>
+                  <td style={{ padding: 8, borderBottom: "1px solid #eee" }}>{l.qty}</td>
+                  <td style={{ padding: 8, borderBottom: "1px solid #eee", textAlign: "right" }}>
+                    <button onClick={() => removeLine(idx)}>Quitar</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div style={{ marginTop: 10, color: "#666" }}>Agrega una o más medidas arriba.</div>
+      )}
+
+      <button style={{ marginTop: 16 }} onClick={runQuote}>Cotizar</button>
       <div style={{ marginTop: 10, color: "#555" }}>{status}</div>
 
-      {result?.options?.length ? (
+      {result?.hasAnyOptions ? (
         <div style={{ marginTop: 16 }}>
           <h3>Opciones</h3>
-
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
             <button onClick={downloadPDF}>Descargar PDF</button>
             {result.whatsappText && <a href={whatsappLink} target="_blank" rel="noreferrer">Abrir WhatsApp</a>}
@@ -122,8 +222,10 @@ export default function QuotePage() {
             <pre style={{ background: "#f5f5f5", padding: 12, overflowX: "auto" }}>{JSON.stringify(result, null, 2)}</pre>
           </details>
         </div>
-      ) : result?.options ? (
-        <div style={{ marginTop: 16, color: "#a00" }}>No hay opciones con stock ≥ {minStock} para {size}.</div>
+      ) : result ? (
+        <div style={{ marginTop: 16, color: "#a00" }}>
+          No hubo opciones con stock ≥ {minStock} para ninguna de las medidas.
+        </div>
       ) : null}
     </div>
   );

@@ -17,10 +17,18 @@ export async function GET(req: Request) {
       .single();
     if (qErr) throw qErr;
 
+    const { data: lines, error: lErr } = await supabaseAdmin
+      .from("quote_lines")
+      .select("*")
+      .eq("quote_id", quoteId)
+      .order("line_no", { ascending: true });
+    if (lErr) throw lErr;
+
     const { data: items, error: iErr } = await supabaseAdmin
       .from("quote_items")
       .select("*")
       .eq("quote_id", quoteId)
+      .order("line_id", { ascending: true })
       .order("rank", { ascending: true });
     if (iErr) throw iErr;
 
@@ -39,7 +47,7 @@ export async function GET(req: Request) {
 
     draw("Llantitune", 18, true);
     y -= 4;
-    draw(`Cotización: ${q.size} (x${q.quantity})`, 13, true);
+    draw(`Cotización`, 13, true);
     draw(`Fecha: ${new Date(q.created_at).toLocaleString()}`, 10);
 
     if (q.customer_name) draw(`Cliente: ${q.customer_name}`, 11);
@@ -50,25 +58,43 @@ export async function GET(req: Request) {
     draw(`Markup: ${q.markup_pct}% | Instalación: $${q.install_each} c/u | Extras: $${q.extras_each} c/u`, 10);
 
     y -= 10;
-    draw("Opciones (top):", 12, true);
+    draw("Opciones:", 12, true);
 
-    const top = (items ?? []).slice(0, 12);
-    for (const it of top) {
-      const line = `#${it.rank} ${it.brand} | ${it.load_speed ?? ""} | $${it.price_each} c/u | Total: $${it.total_with_services} | Prov: ${it.provider}`;
-      if (y < 90) break;
-      draw(line, 10);
+    const itemsByLine = new Map<string, any[]>();
+    for (const it of items ?? []) {
+      const key = String(it.line_id);
+      if (!itemsByLine.has(key)) itemsByLine.set(key, []);
+      itemsByLine.get(key)!.push(it);
     }
 
-    y -= 10;
+    for (const ln of lines ?? []) {
+      if (y < 120) break;
+      draw(`• ${ln.size} (x${ln.quantity})`, 11, true);
+
+      const its = (itemsByLine.get(String(ln.line_id)) ?? []).slice(0, 8);
+      if (!its.length) {
+        draw(`  Sin opciones con stock suficiente.`, 10);
+        y -= 6;
+        continue;
+      }
+
+      for (const it of its) {
+        if (y < 100) break;
+        const line = `  #${it.rank} ${it.brand} | ${it.load_speed ?? ""} | $${it.price_each} c/u | Total: $${it.total_with_services}`;
+        draw(line, 10);
+      }
+      y -= 6;
+    }
+
     draw("Notas:", 11, true);
-    draw("Precios sujetos a disponibilidad y cambios de proveedor.", 10);
+    draw("Precios sujetos a disponibilidad.", 10);
 
     const bytes = await pdf.save();
 
     return new NextResponse(Buffer.from(bytes), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="Llantitune_Cotizacion_${q.size}.pdf"`
+        "Content-Disposition": `inline; filename="Llantitune_Cotizacion_${quoteId}.pdf"`
       }
     });
   } catch (e: any) {
