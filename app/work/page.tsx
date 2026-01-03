@@ -30,7 +30,7 @@ export default function WorkPage() {
               <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>
                   <b>{o.quote_number}</b> — <span style={{ color: "#666" }}>{o.status}</span>
-                  <div style={{ color: "#666" }}>Cliente: {o.customer_name ?? "-"} {o.vehicle_text ? `| Vehículo: ${o.vehicle_text}` : ""}</div>
+                  <div style={{ color: "#666" }}>Cliente: {o.customer_name ?? "-"} {o.vehicle_text ? `| Vehículo: ${o.vehicle_text}` : ""} {o.promised_at ? `| Promesa: ${o.promised_at}` : ""}</div>
                 </div>
                 <a href={`/work/${o.order_id}`}>Ver →</a>
               </div>

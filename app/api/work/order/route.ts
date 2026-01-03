@@ -38,6 +38,8 @@ export async function GET(req: Request) {
     return NextResponse.json({
       order_id: header.order_id,
       status: header.status,
+      promised_at: header.promised_at,
+      internal_notes: header.internal_notes,
       quote_number: fmtQuoteNumber(header.quote_created_at, Number(header.quote_no)),
       items: items ?? []
     });

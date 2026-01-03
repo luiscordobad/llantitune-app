@@ -38,3 +38,7 @@ Run `supabase_migrations/004_settings_orders_selection.sql` in Supabase SQL Edit
 ## Upgrade 1: Auth + Roles + RLS
 Run `supabase_migrations/005_auth_roles_rls.sql` in Supabase SQL Editor.
 Create users in Supabase Auth, then insert rows into `public.profiles` with role admin/mechanic.
+
+
+## Upgrade 2: CRM statuses + timeline
+Run `supabase_migrations/006_crm_status_timeline.sql` in Supabase SQL Editor.

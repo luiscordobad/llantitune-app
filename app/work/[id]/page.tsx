@@ -9,17 +9,32 @@ export default function WorkOrderDetail() {
 
   const [data, setData] = useState<any>(null);
   const [status, setStatus] = useState("Cargando...");
+  const [note, setNote] = useState("");
 
-  useEffect(() => {
+  async function load() {
     if (!id) return;
-    (async () => {
-      const res = await fetch("/api/work/order?id=" + encodeURIComponent(id));
-      const d = await res.json();
-      if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
-      setData(d);
-      setStatus("OK ✅");
-    })();
-  }, [id]);
+    const res = await fetch("/api/work/order?id=" + encodeURIComponent(id));
+    const d = await res.json();
+    if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
+    setData(d);
+    setStatus("OK ✅");
+  }
+
+  useEffect(() => { load(); }, [id]);
+
+  async function setOrderStatus(newStatus: string) {
+    if (!id) return;
+    setStatus("Actualizando...");
+    const res = await fetch("/api/work/order/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId: id, status: newStatus, note: note || null })
+    });
+    const d = await res.json();
+    if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
+    setNote("");
+    await load();
+  }
 
   if (!data) return <div>{status}</div>;
 
@@ -27,10 +42,28 @@ export default function WorkOrderDetail() {
     <div>
       <h2>Orden</h2>
       <div style={{ color: "#666", marginBottom: 10 }}>
-        <b>{data.quote_number}</b> — {data.status}
+        <b>{data.quote_number}</b> — <b>{data.status}</b>
+        {data.promised_at ? <span> | Promesa: {data.promised_at}</span> : null}
       </div>
 
-      <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
+      {data.internal_notes ? (
+        <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12, marginBottom: 12, background: "#fafafa" }}>
+          <b>Notas</b>
+          <div style={{ marginTop: 6, color: "#444", whiteSpace: "pre-wrap" }}>{data.internal_notes}</div>
+        </div>
+      ) : null}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <button onClick={() => setOrderStatus("RECEIVED")}>Marcar RECIBIDO</button>
+        <button onClick={() => setOrderStatus("INSTALLED")}>Marcar INSTALADO</button>
+        <button onClick={() => setOrderStatus("CLOSED")}>Cerrar</button>
+      </div>
+
+      <label>Nota (opcional)
+        <textarea value={note} onChange={e => setNote(e.target.value)} style={{ width: "100%", minHeight: 70 }} />
+      </label>
+
+      <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12, marginTop: 12 }}>
         {data.items?.length ? (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>

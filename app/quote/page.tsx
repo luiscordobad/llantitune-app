@@ -21,6 +21,9 @@ export default function QuotePage() {
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [vehicle, setVehicle] = useState("");
+  const [depositAmount, setDepositAmount] = useState<number | "">("");
+  const [promisedAt, setPromisedAt] = useState<string>("");
+  const [internalNotes, setInternalNotes] = useState<string>("");
 
   // Lines (cart)
   const [lineSizeInput, setLineSizeInput] = useState("");
@@ -85,7 +88,10 @@ export default function QuotePage() {
       body: JSON.stringify({
         lines: lines.map(l => ({ size: l.size, qty: l.qty })),
         markup, install, extras, minStock,
-        customerName, customerEmail, customerPhone, vehicle
+        customerName, customerEmail, customerPhone, vehicle,
+        depositAmount: depositAmount === "" ? null : Number(depositAmount),
+        promisedAt: promisedAt || null,
+        internalNotes: internalNotes || null
       })
     });
 
@@ -124,7 +130,20 @@ export default function QuotePage() {
     return `mailto:${to}?subject=${enc(result.emailSubject)}&body=${enc(result.emailBody)}`;
   }, [result, customerEmail]);
 
-  async function downloadPDF() {
+  async function setQuoteStatus(newStatus: "SENT" | "APPROVED" | "REJECTED") {
+  if (!result?.quoteId) return;
+  setStatus("Actualizando estatus...");
+  const res = await fetch("/api/admin/quote/status", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ quoteId: result.quoteId, status: newStatus })
+  });
+  const d = await res.json();
+  if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
+  setStatus("OK ✅ Estatus actualizado.");
+}
+
+async function downloadPDF() {
     if (!result?.quoteId) return;
     const res = await fetch(`/api/quote/pdf?quoteId=${enc(result.quoteId)}`);
     const blob = await res.blob();
@@ -170,7 +189,16 @@ export default function QuotePage() {
         <label>Email (opcional)
           <input value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="cliente@email.com" />
         </label>
-      </div>
+      <label>Anticipo (MXN) (interno)
+  <input type="number" value={depositAmount} onChange={e => setDepositAmount(e.target.value === "" ? "" : Number(e.target.value))} />
+</label>
+<label>Fecha promesa (interno)
+  <input type="date" value={promisedAt} onChange={e => setPromisedAt(e.target.value)} />
+</label>
+<label style={{ gridColumn: "1 / span 2" }}>Notas internas (interno)
+  <textarea value={internalNotes} onChange={e => setInternalNotes(e.target.value)} style={{ width: "100%", minHeight: 70 }} />
+</label>
+</div>
 
       <hr style={{ margin: "18px 0" }} />
 
@@ -227,6 +255,9 @@ export default function QuotePage() {
           <div style={{ color: "#444", marginTop: -6, marginBottom: 10 }}><b>No. {result.quoteNumber}</b></div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+            <button onClick={() => setQuoteStatus("SENT")}>Marcar ENVIADA</button>
+            <button onClick={() => setQuoteStatus("APPROVED")}>Marcar APROBADA</button>
+            <button onClick={() => setQuoteStatus("REJECTED")}>Marcar RECHAZADA</button>
             <button onClick={downloadPDF}>Descargar PDF</button>
             {result.whatsappText && <a href={whatsappLink} target="_blank" rel="noreferrer">Abrir WhatsApp</a>}
             {result.emailSubject && <a href={mailtoLink}>Preparar correo</a>}
