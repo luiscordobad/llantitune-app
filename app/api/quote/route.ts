@@ -234,7 +234,7 @@ export async function POST(req: Request) {
         // attach quoteItemId back for UI bucket selection (match by rank)
         const mapByRank: Record<number, string> = {};
         for (const it of inserted ?? []) mapByRank[Number(it.rank)] = it.quote_item_id as string;
-        for (const o of options) o.quoteItemId = mapByRank[o.rank] ?? null;
+        for (const o of options as any[]) (o as any).quoteItemId = mapByRank[(o as any).rank] ?? null;
       }
 
       // Build buckets for customer message
