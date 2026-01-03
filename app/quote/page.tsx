@@ -1,19 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { normalizeSizeAny } from "@/lib/normalize";
 
-function enc(s: string) {
-  return encodeURIComponent(s);
-}
+function enc(s: string) { return encodeURIComponent(s); }
 
-type Line = {
-  sizeInput: string;
-  size: string;
-  qty: number;
-};
+type Line = { sizeInput: string; size: string; qty: number; };
 
 export default function QuotePage() {
+  const [loadingDefaults, setLoadingDefaults] = useState(true);
+
   // Global settings (applies to all lines)
   const [markup, setMarkup] = useState(30);
   const [install, setInstall] = useState(1000);
@@ -34,6 +30,35 @@ export default function QuotePage() {
 
   const [result, setResult] = useState<any>(null);
   const [status, setStatus] = useState<string>("");
+
+  useEffect(() => {
+    (async () => {
+      // load default settings
+      const res = await fetch("/api/settings");
+      const data = await res.json();
+      const s = data.settings ?? {};
+      setMarkup(Number(s.default_markup_pct ?? 30));
+      setInstall(Number(s.default_install_each ?? 1000));
+      setExtras(Number(s.default_extras_each ?? 1000));
+      setMinStock(Number(s.default_min_stock ?? 8));
+      setLoadingDefaults(false);
+
+      // requote support: /quote?requote=<quoteId>
+      const params = new URLSearchParams(window.location.search);
+      const requote = params.get("requote");
+      if (requote) {
+        const rr = await fetch("/api/requote?quoteId=" + encodeURIComponent(requote));
+        const rj = await rr.json();
+        if (rr.ok) {
+          setCustomerName(rj.customerName ?? "");
+          setCustomerPhone(rj.customerPhone ?? "");
+          setCustomerEmail(rj.customerEmail ?? "");
+          setVehicle(rj.vehicle ?? "");
+          setLines((rj.lines ?? []).map((l: any) => ({ sizeInput: l.size, size: l.size, qty: l.qty })));
+        }
+      }
+    })();
+  }, []);
 
   function addLine() {
     const size = normalized;
@@ -61,14 +86,8 @@ export default function QuotePage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         lines: lines.map(l => ({ size: l.size, qty: l.qty })),
-        markup,
-        install,
-        extras,
-        minStock,
-        customerName,
-        customerEmail,
-        customerPhone,
-        vehicle
+        markup, install, extras, minStock,
+        customerName, customerEmail, customerPhone, vehicle
       })
     });
 
@@ -79,6 +98,19 @@ export default function QuotePage() {
     }
     setResult(data);
     setStatus("OK ✅");
+  }
+
+  async function selectOption(lineId: string, quoteItemId: string) {
+    if (!result?.quoteId) return;
+    setStatus("Guardando selección...");
+    const res = await fetch("/api/quote/select", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ quoteId: result.quoteId, lineId, quoteItemId })
+    });
+    const data = await res.json();
+    if (!res.ok) return setStatus("Error: " + (data.error ?? "unknown"));
+    setStatus("OK ✅ Selección guardada");
   }
 
   const whatsappLink = useMemo(() => {
@@ -101,49 +133,43 @@ export default function QuotePage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `Llantitune_Cotizacion_${result.quoteId}.pdf`;
+    a.download = `Llantitune_Cotizacion_${result.quoteNumber}.pdf`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
   return (
-    <div style={{ maxWidth: 1100 }}>
+    <div style={{ maxWidth: 1150 }}>
       <h2>Cotizador</h2>
 
+      {loadingDefaults ? <div style={{ color: "#666" }}>Cargando defaults...</div> : null}
+
       <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
-        <label>
-          Markup %
+        <label>Markup % (interno)
           <input type="number" value={markup} onChange={e => setMarkup(Number(e.target.value))} />
         </label>
-        <label>
-          Stock mínimo (regla Llantitune)
+        <label>Stock mínimo (interno)
           <input type="number" value={minStock} onChange={e => setMinStock(Number(e.target.value))} />
         </label>
 
-        <label>
-          Instalación por llanta
+        <label>Instalación por llanta (interno)
           <input type="number" value={install} onChange={e => setInstall(Number(e.target.value))} />
         </label>
-        <label>
-          Extras por llanta
+        <label>Extras por llanta (interno)
           <input type="number" value={extras} onChange={e => setExtras(Number(e.target.value))} />
         </label>
 
-        <label>
-          Cliente (nombre)
+        <label>Cliente (nombre)
           <input value={customerName} onChange={e => setCustomerName(e.target.value)} />
         </label>
-        <label>
-          Vehículo (opcional)
+        <label>Vehículo (opcional)
           <input value={vehicle} onChange={e => setVehicle(e.target.value)} placeholder="Ej. Focus" />
         </label>
 
-        <label>
-          WhatsApp (10 dígitos MX) (opcional)
+        <label>WhatsApp (10 dígitos MX) (opcional)
           <input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="Ej. 4421234567" />
         </label>
-        <label>
-          Email (opcional)
+        <label>Email (opcional)
           <input value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="cliente@email.com" />
         </label>
       </div>
@@ -158,15 +184,9 @@ export default function QuotePage() {
           <div style={{ fontSize: 12, color: "#666" }}>Normalizado: <b>{normalized || "-"}</b></div>
         </label>
         <label style={{ gridColumn: "2 / 3" }}>
-          Cantidad
-          <input
-            type="number"
-            min={1}
-            step={1}
-            value={lineQty}
-            onChange={e => setLineQty(Math.max(1, Number(e.target.value || 1)))}
-            style={{ width: "100%" }}
-          />
+          Cantidad solicitada
+          <input type="number" min={1} step={1} value={lineQty}
+            onChange={e => setLineQty(Math.max(1, Number(e.target.value || 1)))} style={{ width: "100%" }} />
         </label>
         <div style={{ gridColumn: "3 / 4", display: "flex", alignItems: "flex-end" }}>
           <button onClick={addLine} style={{ width: "100%" }}>Agregar</button>
@@ -179,7 +199,7 @@ export default function QuotePage() {
             <thead>
               <tr>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>Tamaño</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>Cantidad</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>Cantidad solicitada</th>
                 <th style={{ borderBottom: "1px solid #ddd", padding: 8 }}></th>
               </tr>
             </thead>
@@ -205,26 +225,62 @@ export default function QuotePage() {
 
       {result?.hasAnyOptions ? (
         <div style={{ marginTop: 16 }}>
-          <h3>Opciones</h3>\n          <div style={{ color: '#444', marginTop: -6, marginBottom: 10 }}><b>No. {result.quoteNumber}</b></div>
+          <h3>Opciones</h3>
+          <div style={{ color: "#444", marginTop: -6, marginBottom: 10 }}><b>No. {result.quoteNumber}</b></div>
+
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
             <button onClick={downloadPDF}>Descargar PDF</button>
             {result.whatsappText && <a href={whatsappLink} target="_blank" rel="noreferrer">Abrir WhatsApp</a>}
             {result.emailSubject && <a href={mailtoLink}>Preparar correo</a>}
+            {result.quoteId && <a href={`/admin/orders?quoteId=${result.quoteId}`}>Ver pedido interno</a>}
           </div>
+
+          {(result.lines ?? []).map((ln: any) => (
+            <div key={ln.lineId} style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12, marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div>
+                  <b>{ln.size}</b> <span style={{ color: "#666" }}>(Solicitado x{ln.requestedQty})</span>
+                </div>
+                {ln.anyLimited ? <div style={{ color: "#a60" }}>⚠️ Algunas opciones tienen stock limitado</div> : null}
+              </div>
+
+              <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", marginTop: 10 }}>
+                {(ln.options ?? []).map((o: any, idx: number) => (
+                  <div key={idx} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
+                    <div style={{ fontWeight: 700 }}>{o.label}</div>
+                    <div style={{ marginTop: 6 }}>
+                      <div><b>{o.brand}</b></div>
+                      <div style={{ color: "#555" }}>{o.loadSpeed ?? ""}</div>
+                      <div style={{ marginTop: 6 }}><b>${o.priceEach}</b> c/u</div>
+                      <div style={{ color: "#555" }}>Total: <b>${o.totalWithServices}</b></div>
+                      {o.limited ? (
+                        <div style={{ marginTop: 6, color: "#a60" }}>
+                          Disponible hoy: <b>x{o.quotedQty}</b> (stock: {o.stock})
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: 6, color: "#666" }}>Stock: {o.stock}</div>
+                      )}
+                    </div>
+
+                    {o.quoteItemId ? (
+                      <button style={{ marginTop: 10 }} onClick={() => selectOption(ln.lineId, o.quoteItemId)}>
+                        Elegir esta opción
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
 
           <details open>
             <summary>Texto WhatsApp (copiar)</summary>
             <pre style={{ background: "#f5f5f5", padding: 12, whiteSpace: "pre-wrap" }}>{result.whatsappText}</pre>
           </details>
-
-          <details>
-            <summary>Debug JSON</summary>
-            <pre style={{ background: "#f5f5f5", padding: 12, overflowX: "auto" }}>{JSON.stringify(result, null, 2)}</pre>
-          </details>
         </div>
       ) : result ? (
         <div style={{ marginTop: 16, color: "#a00" }}>
-          No hubo opciones con stock ≥ {minStock} para ninguna de las medidas.
+          No hubo opciones con stock suficiente para ninguna de las medidas.
         </div>
       ) : null}
     </div>

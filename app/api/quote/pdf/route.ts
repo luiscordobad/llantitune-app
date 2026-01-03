@@ -77,18 +77,24 @@ export async function GET(req: Request) {
 
     for (const ln of lines ?? []) {
       if (y < 120) break;
-      draw(`• ${ln.size} (x${ln.quantity})`, 11, true);
+      draw(`• ${ln.size} (solicitado x${ln.quantity})`, 11, true);
 
-      const its = (itemsByLine.get(String(ln.line_id)) ?? []).slice(0, 8);
+      const its = (itemsByLine.get(String(ln.line_id)) ?? []).slice(0, 12);
       if (!its.length) {
         draw(`  Sin opciones con stock suficiente.`, 10);
         y -= 6;
         continue;
       }
 
-      for (const it of its) {
+      // Show 3 entries: econ/mid/prem
+      const picks = [its[0], its[Math.floor(its.length/2)], its[its.length-1]]
+        .filter((v, i, a) => v && a.findIndex(x => x.quote_item_id === v.quote_item_id) === i);
+
+      const labels = ["Económica", "Recomendada", "Premium"];
+      for (let i=0;i<picks.length;i++) {
         if (y < 100) break;
-        const line = `  #${it.rank} ${it.brand} | ${it.load_speed ?? ""} | $${it.price_each} c/u | Total: $${it.total_with_services}`;
+        const it = picks[i];
+        const line = `  ${labels[i] ?? "Opción"}: ${it.brand} | ${it.load_speed ?? ""} | $${it.price_each} c/u | Total: $${it.total_with_services}`;
         draw(line, 10);
       }
       y -= 6;

@@ -29,3 +29,7 @@ Run `supabase_migrations/002_quote_lines.sql` in Supabase SQL Editor.
 
 ## Supabase migration (customers + quote number)
 Run `supabase_migrations/003_customers_and_quote_no.sql` in Supabase SQL Editor.
+
+
+## Supabase migration (settings + orders + selection)
+Run `supabase_migrations/004_settings_orders_selection.sql` in Supabase SQL Editor.

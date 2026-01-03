@@ -7,14 +7,13 @@ export default function Home() {
       </p>
 
       <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
-        <a href="/admin/import">→ Importar listas</a>
+        <a href="/admin">→ Admin</a>
         <a href="/quote">→ Cotizar</a>
       </div>
 
       <hr style={{ margin: "24px 0" }} />
-
       <p style={{ color: "#666" }}>
-        Primero sube listas en <b>Importar</b> y luego cotiza en <b>Cotizar</b>.
+        Flujo: 1) Importa listas 2) Cotiza 3) Elige opción final 4) Genera pedido interno.
       </p>
     </div>
   );
