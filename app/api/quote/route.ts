@@ -237,22 +237,23 @@ export async function POST(req: Request) {
         for (const o of options as any[]) (o as any).quoteItemId = mapByRank[(o as any).rank] ?? null;
       }
 
-      // Build buckets for customer message
-      const buckets = pickBuckets(options.slice(0, 12));
-      const bucketLabeled = buckets.map((o: any, i: number) => ({
-        ...o,
-        label: i === 0 ? "Económica" : (i === 1 && buckets.length === 3 ? "Recomendada" : (i === 1 ? "Premium" : "Premium"))
-      }));
+      // Tier labeling for customer message (all options)
+      const nOpt = options.length;
+      const tiered = options.map((o: any, idx: number) => {
+        const p = nOpt <= 1 ? 0 : idx / (nOpt - 1);
+        const tier = p <= 0.34 ? 'Económica' : (p <= 0.67 ? 'Media' : 'Premium');
+        return { ...o, tier };
+      });
 
       // Warning if some options limited
-      const anyLimited = bucketLabeled.some(o => o.limited);
+      const anyLimited = tiered.some((o: any) => o.limited);
 
       perLineResults.push({
         lineId: line.line_id,
         lineNo: line.line_no,
         size,
         requestedQty,
-        options: bucketLabeled,
+        options: tiered,
         anyLimited
       });
     }
@@ -264,22 +265,23 @@ ${customerName ? `Cliente: ${customerName}\n` : ""}${vehicle ? `Vehículo: ${veh
 `;
 
     const bodyText = perLineResults.map((lr: any) => {
-      const opts = (lr.options ?? []);
-      if (!opts.length) return `• ${lr.size} (solicitado x${lr.requestedQty}): Sin opciones con stock suficiente`;
+  const opts = (lr.options ?? []);
+  if (!opts.length) return `• ${lr.size} (solicitado x${lr.requestedQty}): Sin opciones con stock suficiente`;
 
-      const lines = opts.map((o: any) => {
-        const qtyText = o.limited ? ` (Disponible x${o.quotedQty})` : "";
-        return `  ${o.label}: ${o.brand} | ${o.loadSpeed ?? ""} | $${o.priceEach} c/u | Total: $${o.totalWithServices}${qtyText}`;
-      });
+  const lines = opts.map((o: any, i: number) => {
+    const qtyText = o.limited ? ` (Disponible x${o.quotedQty})` : "";
+    return `  #${i + 1} [${o.tier}] ${o.brand} | ${o.loadSpeed ?? ""} | $${o.priceEach} c/u | Total: $${o.totalWithServices}${qtyText}`;
+  });
 
-      const note = opts.some((o: any) => o.limited)
-        ? `  ⚠️ Nota: La(s) opción(es) marcada(s) solo tienen stock para esa cantidad hoy.`
-        : "";
+  const note = opts.some((o: any) => o.limited)
+    ? `  ⚠️ Nota: Algunas opciones tienen stock limitado para la cantidad solicitada hoy.`
+    : "";
 
-      return `• ${lr.size} (solicitado x${lr.requestedQty}):\n${lines.join("\n")}${note ? "\n" + note : ""}`;
-    }).join("\n\n");
+  return `• ${lr.size} (solicitado x${lr.requestedQty}):\n${lines.join("\n")}${note ? "\n" + note : ""}`;
+}).join("\n\n");
 
-    const whatsappText = header + "\n" + bodyText + "\n\n¿Te aparto alguna opción?";
+const whatsappText = header + "\n" + bodyText + "\n\nResponde con el número de opción (por medida) para apartarla.";
+ + "\n" + bodyText + "\n\n¿Te aparto alguna opción?";
 
     const emailSubject = `Cotización Llantitune – ${quoteNumber}`;
     const emailBody =
@@ -293,9 +295,9 @@ ${perLineResults.map((lr: any) => {
   if (!opts.length) return `- ${lr.size} (solicitado x${lr.requestedQty}): Sin stock suficiente`;
 
   const anyLimited = opts.some((o: any) => o.limited);
-  const bullets = opts.map((o: any) => {
+  const bullets = opts.map((o: any, i: number) => {
     const qtyText = o.limited ? ` (Disponible x${o.quotedQty})` : "";
-    return `  • ${o.label}: ${o.brand} ${o.loadSpeed ?? ""} – $${o.priceEach} c/u (Total: $${o.totalWithServices})${qtyText}`;
+    return `  • #${i+1} [${o.tier}] ${o.brand} ${o.loadSpeed ?? ""} – $${o.priceEach} c/u (Total: $${o.totalWithServices})${qtyText}`;
   }).join("\n");
 
   const note = anyLimited ? `\n  ⚠️ Nota: Algunas opciones tienen stock limitado hoy.` : "";

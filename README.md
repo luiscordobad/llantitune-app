@@ -33,3 +33,8 @@ Run `supabase_migrations/003_customers_and_quote_no.sql` in Supabase SQL Editor.
 
 ## Supabase migration (settings + orders + selection)
 Run `supabase_migrations/004_settings_orders_selection.sql` in Supabase SQL Editor.
+
+
+## Upgrade 1: Auth + Roles + RLS
+Run `supabase_migrations/005_auth_roles_rls.sql` in Supabase SQL Editor.
+Create users in Supabase Auth, then insert rows into `public.profiles` with role admin/mechanic.
