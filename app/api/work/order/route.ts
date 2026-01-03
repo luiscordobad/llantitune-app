@@ -17,7 +17,7 @@ export async function GET(req: Request) {
     const id = url.searchParams.get("id");
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
-    const supabase = supabaseServer();
+    const supabase = await supabaseServer();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
