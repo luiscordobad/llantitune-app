@@ -25,3 +25,7 @@ Note: TireID uses SHA-256 (first 12 hex) for deterministic IDs.
 
 ## Supabase migration (multi-size quotes)
 Run `supabase_migrations/002_quote_lines.sql` in Supabase SQL Editor.
+
+
+## Supabase migration (customers + quote number)
+Run `supabase_migrations/003_customers_and_quote_no.sql` in Supabase SQL Editor.

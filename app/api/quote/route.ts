@@ -6,6 +6,69 @@ export const runtime = "nodejs";
 
 type LineIn = { size: string; qty: number };
 
+function digitsOnly(s: string) {
+  return (s ?? "").replace(/\D/g, "");
+}
+function lower(s: string) {
+  return (s ?? "").trim().toLowerCase();
+}
+function fmtQuoteNumber(quoteNo: number) {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `LT-${y}${m}${dd}-${String(quoteNo).padStart(5, "0")}`;
+}
+
+async function findOrCreateCustomer(name?: string, phone?: string, email?: string) {
+  const p = digitsOnly(phone ?? "");
+  const e = lower(email ?? "");
+  const n = (name ?? "").trim() || null;
+
+  // Try by phone first, then email
+  if (p) {
+    const { data, error } = await supabaseAdmin.from("customers").select("*").eq("phone", p).limit(1);
+    if (error) throw error;
+    if (data?.[0]) {
+      const existing = data[0];
+      // update name/email if missing
+      const patch: any = {};
+      if (n && !existing.name) patch.name = n;
+      if (e && !existing.email) patch.email = e;
+      if (Object.keys(patch).length) {
+        await supabaseAdmin.from("customers").update(patch).eq("customer_id", existing.customer_id);
+      }
+      return existing.customer_id as string;
+    }
+  }
+
+  if (e) {
+    const { data, error } = await supabaseAdmin.from("customers").select("*").eq("email", e).limit(1);
+    if (error) throw error;
+    if (data?.[0]) {
+      const existing = data[0];
+      const patch: any = {};
+      if (n && !existing.name) patch.name = n;
+      if (p && !existing.phone) patch.phone = p;
+      if (Object.keys(patch).length) {
+        await supabaseAdmin.from("customers").update(patch).eq("customer_id", existing.customer_id);
+      }
+      return existing.customer_id as string;
+    }
+  }
+
+  if (!n && !p && !e) return null;
+
+  const { data: created, error: cErr } = await supabaseAdmin
+    .from("customers")
+    .insert({ name: n, phone: p || null, email: e || null })
+    .select("customer_id")
+    .single();
+  if (cErr) throw cErr;
+
+  return created.customer_id as string;
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -24,6 +87,13 @@ export async function POST(req: Request) {
 
     if (!lines.length) return NextResponse.json({ error: "Invalid sizes" }, { status: 400 });
 
+    const customerName = body.customerName ?? null;
+    const customerPhone = digitsOnly(body.customerPhone ?? "") || null;
+    const customerEmail = lower(body.customerEmail ?? "") || null;
+    const vehicle = body.vehicle ?? null;
+
+    const customerId = await findOrCreateCustomer(customerName ?? undefined, customerPhone ?? undefined, customerEmail ?? undefined);
+
     // Latest snapshot per provider
     const providers = ["Prodynamics", "Cotizador", "INV"];
     const latest: Record<string, string | null> = {};
@@ -39,13 +109,14 @@ export async function POST(req: Request) {
       latest[p] = data?.[0]?.snapshot_date ?? null;
     }
 
-    // Create quote header (no single-size fields anymore; those will be in quote_lines)
+    // Create quote header
     const { data: q, error: qErr } = await supabaseAdmin
       .from("quotes")
       .insert({
-        customer_name: body.customerName ?? null,
-        customer_phone: body.customerPhone ?? null,
-        vehicle_text: body.vehicle ?? null,
+        customer_id: customerId,
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        vehicle_text: vehicle,
         size: null,
         quantity: 1,
         urgency: null,
@@ -55,11 +126,13 @@ export async function POST(req: Request) {
         extras_each: extras,
         notes: null
       })
-      .select("quote_id")
+      .select("quote_id, quote_no, created_at")
       .single();
     if (qErr) throw qErr;
 
     const quoteId = q.quote_id as string;
+    const quoteNo = Number(q.quote_no);
+    const quoteNumber = fmtQuoteNumber(quoteNo);
 
     // Insert quote_lines
     const lineRows = lines.map((l, i) => ({
@@ -75,7 +148,6 @@ export async function POST(req: Request) {
       .select("line_id, line_no, size, quantity");
     if (lErr) throw lErr;
 
-    // For each line: fetch offers (latest snapshot per provider) and pick options sorted by cheapest
     const perLineResults: any[] = [];
     let hasAnyOptions = false;
 
@@ -128,7 +200,6 @@ export async function POST(req: Request) {
 
       if (options.length) hasAnyOptions = true;
 
-      // Persist quote_items (top 15 per line)
       if (options.length) {
         const items = options.slice(0, 15).map((o: any) => ({
           quote_id: quoteId,
@@ -151,45 +222,37 @@ export async function POST(req: Request) {
         if (iErr) throw iErr;
       }
 
-      perLineResults.push({
-        lineNo: line.line_no,
-        size,
-        qty,
-        options
-      });
+      perLineResults.push({ lineNo: line.line_no, size, qty, options });
     }
 
-    // Build customer-facing text WITHOUT provider
+    // Customer-facing text WITHOUT provider AND WITHOUT markup/install/extras values
     const header =
 `Llantitune ✅ Cotización
-${body.customerName ? `Cliente: ${body.customerName}\n` : ""}${body.vehicle ? `Vehículo: ${body.vehicle}\n` : ""}
-Markup: ${markup}%
-Instalación: $${install} c/u | Extras: $${extras} c/u
-
+No. ${quoteNumber}
+${customerName ? `Cliente: ${customerName}\n` : ""}${vehicle ? `Vehículo: ${vehicle}\n` : ""}
 `;
 
     const bodyText = perLineResults.map((lr: any) => {
       const opts = (lr.options ?? []).slice(0, 6);
       if (!opts.length) {
-        return `• ${lr.size} (x${lr.qty}): Sin opciones con stock ≥ ${minStock}`;
+        return `• ${lr.size} (x${lr.qty}): Sin opciones con stock suficiente`;
       }
       const lines = opts.map((o: any) => `  #${o.rank} ${o.brand} | ${o.loadSpeed ?? ""} | $${o.priceEach} c/u | Total: $${o.totalWithServices}`);
       return `• ${lr.size} (x${lr.qty}):\n${lines.join("\n")}`;
     }).join("\n\n");
 
-    const whatsappText = header + bodyText + "\n\n¿Te aparto alguna opción?";
+    const whatsappText = header + "\n" + bodyText + "\n\n¿Te aparto alguna opción?";
 
-    const emailSubject = `Cotización Llantitune`;
+    const emailSubject = `Cotización Llantitune – ${quoteNumber}`;
     const emailBody =
-`Hola${body.customerName ? " " + body.customerName : ""},
+`Hola${customerName ? " " + customerName : ""},
 
-Te comparto la cotización.
-${body.vehicle ? `Vehículo: ${body.vehicle}\n` : ""}
-Incluye instalación y extras como se indica.
+Te comparto la cotización No. ${quoteNumber}.
+${vehicle ? `Vehículo: ${vehicle}\n` : ""}
 
 ${perLineResults.map((lr: any) => {
   const opts = (lr.options ?? []).slice(0, 6);
-  if (!opts.length) return `- ${lr.size} (x${lr.qty}): Sin opciones con stock ≥ ${minStock}`;
+  if (!opts.length) return `- ${lr.size} (x${lr.qty}): Sin opciones con stock suficiente`;
   return [
     `- ${lr.size} (x${lr.qty}):`,
     ...opts.map((o: any) => `  • ${o.brand} ${o.loadSpeed ?? ""}: $${o.priceEach} c/u (Total: $${o.totalWithServices})`)
@@ -203,6 +266,9 @@ Llantitune`;
 
     return NextResponse.json({
       quoteId,
+      quoteNo,
+      quoteNumber,
+      createdAt: q.created_at,
       providersLatestSnapshot: latest,
       hasAnyOptions,
       lines: perLineResults,

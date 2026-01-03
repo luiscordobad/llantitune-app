@@ -205,7 +205,7 @@ export default function QuotePage() {
 
       {result?.hasAnyOptions ? (
         <div style={{ marginTop: 16 }}>
-          <h3>Opciones</h3>
+          <h3>Opciones</h3>\n          <div style={{ color: '#444', marginTop: -6, marginBottom: 10 }}><b>No. {result.quoteNumber}</b></div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
             <button onClick={downloadPDF}>Descargar PDF</button>
             {result.whatsappText && <a href={whatsappLink} target="_blank" rel="noreferrer">Abrir WhatsApp</a>}

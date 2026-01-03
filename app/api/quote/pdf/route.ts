@@ -4,6 +4,14 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 
 export const runtime = "nodejs";
 
+function fmtQuoteNumber(createdAt: string, quoteNo: number) {
+  const d = new Date(createdAt);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `LT-${y}${m}${dd}-${String(quoteNo).padStart(5, "0")}`;
+}
+
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -16,6 +24,8 @@ export async function GET(req: Request) {
       .eq("quote_id", quoteId)
       .single();
     if (qErr) throw qErr;
+
+    const quoteNumber = fmtQuoteNumber(q.created_at, Number(q.quote_no));
 
     const { data: lines, error: lErr } = await supabaseAdmin
       .from("quote_lines")
@@ -46,16 +56,14 @@ export async function GET(req: Request) {
     };
 
     draw("Llantitune", 18, true);
-    y -= 4;
-    draw(`Cotización`, 13, true);
+    y -= 2;
+    draw("Cotización", 13, true);
+    draw(`No. ${quoteNumber}`, 11, true);
     draw(`Fecha: ${new Date(q.created_at).toLocaleString()}`, 10);
 
     if (q.customer_name) draw(`Cliente: ${q.customer_name}`, 11);
     if (q.customer_phone) draw(`WhatsApp: ${q.customer_phone}`, 11);
     if (q.vehicle_text) draw(`Vehículo: ${q.vehicle_text}`, 11);
-
-    y -= 6;
-    draw(`Markup: ${q.markup_pct}% | Instalación: $${q.install_each} c/u | Extras: $${q.extras_each} c/u`, 10);
 
     y -= 10;
     draw("Opciones:", 12, true);
@@ -94,7 +102,7 @@ export async function GET(req: Request) {
     return new NextResponse(Buffer.from(bytes), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="Llantitune_Cotizacion_${quoteId}.pdf"`
+        "Content-Disposition": `inline; filename="Llantitune_Cotizacion_${quoteNumber}.pdf"`
       }
     });
   } catch (e: any) {
