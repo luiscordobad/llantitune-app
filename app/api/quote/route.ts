@@ -148,9 +148,9 @@ export async function POST(req: Request) {
       line_no: i + 1,
       size: l.size,
       quantity: l.qty,
-      vehicle_make: l.vehicleMake ?? vehicleMake,
-      vehicle_model: l.vehicleModel ?? vehicleModel,
-      vehicle_year: (l.vehicleYear ?? vehicleYear) as any
+      vehicle_make: (l as any).vehicleMake ?? vehicleMake ?? null,
+      vehicle_model: (l as any).vehicleModel ?? vehicleModel ?? null,
+      vehicle_year: ((l as any).vehicleYear ?? vehicleYear ?? null) as any
     }));
 
     const { data: insertedLines, error: lErr } = await supabaseAdmin
