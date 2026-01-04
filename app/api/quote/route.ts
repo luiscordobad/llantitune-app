@@ -4,7 +4,7 @@ import { normalizeSizeAny } from "@/lib/normalize";
 
 export const runtime = "nodejs";
 
-type LineIn = { size: string; qty: number };
+type LineIn = { size: string; qty: number; vehicleMake?: string | null; vehicleModel?: string | null; vehicleYear?: number | null };
 
 function digitsOnly(s: string) { return (s ?? "").replace(/\D/g, ""); }
 function lower(s: string) { return (s ?? "").trim().toLowerCase(); }
@@ -139,21 +139,24 @@ export async function POST(req: Request) {
     if (qErr) throw qErr;
 
     const quoteId = q.quote_id as string;
-    const quoteNo = Number(q.quote_no);
-    const quoteNumber = fmtQuoteNumber(quoteNo, q.created_at);
+    const quoteNo = Number((q as any).quote_no ?? 0);
+    const quoteNumber: string | null = null; // folio se asigna al enviar (status SENT)
 
     // Insert quote_lines
     const lineRows = lines.map((l, i) => ({
       quote_id: quoteId,
       line_no: i + 1,
       size: l.size,
-      quantity: l.qty
+      quantity: l.qty,
+      vehicle_make: l.vehicleMake ?? vehicleMake,
+      vehicle_model: l.vehicleModel ?? vehicleModel,
+      vehicle_year: (l.vehicleYear ?? vehicleYear) as any
     }));
 
     const { data: insertedLines, error: lErr } = await supabaseAdmin
       .from("quote_lines")
       .insert(lineRows)
-      .select("line_id, line_no, size, quantity");
+      .select("line_id, line_no, size, quantity, vehicle_make, vehicle_model, vehicle_year");
     if (lErr) throw lErr;
 
     const perLineResults: any[] = [];
@@ -161,6 +164,7 @@ export async function POST(req: Request) {
 
     for (const line of insertedLines ?? []) {
       const size = line.size as string;
+      const lineVehicle = [line.vehicle_make, line.vehicle_model, line.vehicle_year].filter(Boolean).join(' ');
       const requestedQty = Number(line.quantity);
 
       const all: any[] = [];
@@ -244,10 +248,12 @@ export async function POST(req: Request) {
         for (const o of options as any[]) (o as any).quoteItemId = mapByRank[(o as any).rank] ?? null;
       }
 
-      // Tier labeling for customer message (all options)
+      // Tier labeling (Económica / Media / Premium)
       const nOpt = options.length;
-      const tiered = options.map((o: any, idx: number) => {
-        const p = nOpt <= 1 ? 0 : idx / (nOpt - 1);
+      for (let i = 0; i < options.length; i++) {
+        const p = nOpt <= 1 ? 0 : i / (nOpt - 1);
+        (options[i] as any).tier = p <= 0.34 ? 'Económica' : (p <= 0.67 ? 'Media' : 'Premium');
+      }
         const tier = p <= 0.34 ? 'Económica' : (p <= 0.67 ? 'Media' : 'Premium');
         return { ...o, tier };
       });
@@ -290,11 +296,11 @@ ${customerName ? `Cliente: ${customerName}\n` : ""}${vehicle ? `Vehículo: ${veh
 const whatsappText = header + "\n" + bodyText + "\n\nResponde con el número de opción (por medida) para apartarla.";
  + "\n" + bodyText + "\n\n¿Te aparto alguna opción?";
 
-    const emailSubject = `Cotización Llantitune – ${quoteNumber}`;
+    const emailSubject = `Cotización Llantitune${quoteNumber ? ' – ' + quoteNumber : ''}`;
     const emailBody =
 `Hola${customerName ? " " + customerName : ""},
 
-Te comparto la cotización No. ${quoteNumber}.
+Te comparto la cotización${quoteNumber ? ' No. ' + quoteNumber : ''}.
 ${vehicle ? `Vehículo: ${vehicle}\n` : ""}
 
 ${perLineResults.map((lr: any) => {

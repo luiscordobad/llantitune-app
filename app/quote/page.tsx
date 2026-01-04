@@ -221,14 +221,25 @@ export default function QuotePage() {
   }
 
   async function chooseOption(quoteLineId: string, quoteItemId: string) {
-    setStatus("Guardando selección...");
-    const res = await fetch("/api/select", {
+  if (!quoteItemId) {
+    setStatus("Error: esta opción no tiene ID (quoteItemId). Revisa que se estén insertando quote_items.");
+    return;
+  }
+  setStatus("Guardando selección...");
+  try {
+    const res = await fetch("/api/quote/select", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ quoteLineId, quoteItemId }),
+      body: JSON.stringify({ quoteId: result?.quoteId, lineId: quoteLineId, quoteItemId }),
     });
-    const d = await res.json();
-    if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
+
+    let d: any = null;
+    try { d = await res.json(); } catch { d = null; }
+
+    if (!res.ok) {
+      setStatus("Error al guardar selección: " + (d?.error ?? `${res.status}`));
+      return;
+    }
 
     // Update local state
     setResult((prev: any) => {
@@ -240,9 +251,12 @@ export default function QuotePage() {
     });
 
     setStatus("Selección guardada ✅");
+  } catch (e: any) {
+    setStatus("Error al guardar selección: " + (e?.message ?? String(e)));
   }
+}
 
-  async function markSent() {
+async function markSent() {
     if (!result?.quoteId) return;
     if (!canGoToStep5()) return setStatus("Selecciona una opción por cada medida antes de enviar.");
     setStatus("Marcando ENVIADA y asignando folio...");
@@ -254,7 +268,8 @@ export default function QuotePage() {
     const d = await res.json();
     if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
     // refresh quote info if endpoint returns quote_number; if not, keep and suggest refresh
-    setStatus("ENVIADA ✅ (folio asignado). Si no ves el folio, recarga la página.");
+    if (d?.quoteNumber) { setResult((prev:any)=> prev ? ({...prev, quoteNumber: d.quoteNumber}) : prev); }
+    setStatus("ENVIADA ✅ (folio asignado).");
   }
 
   async function downloadPDF() {
@@ -619,8 +634,8 @@ export default function QuotePage() {
                   <div style={{ color: "#666" }}>{customerName} — {customerPhone} — {customerEmail}</div>
                 </div>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <button type="button" onClick={copyWhatsappText}>Copiar WhatsApp</button>
-                  <button type="button" onClick={downloadPDF}>Descargar PDF</button>
+                  <button type="button" onClick={copyWhatsappText} disabled={!result?.quoteNumber || String(result.quoteNumber).includes("BORRADOR")} style={{opacity: (!result?.quoteNumber || String(result.quoteNumber).includes("BORRADOR")) ? 0.5 : 1}}>Copiar WhatsApp</button>
+                  <button type="button" onClick={downloadPDF} disabled={!result?.quoteNumber || String(result.quoteNumber).includes("BORRADOR")} style={{opacity: (!result?.quoteNumber || String(result.quoteNumber).includes("BORRADOR")) ? 0.5 : 1}}>Descargar PDF</button>
                   <button
                     type="button"
                     onClick={markSent}
@@ -672,7 +687,7 @@ export default function QuotePage() {
                           <tbody>
                             {line.options.map((o: any) => (
                               <tr key={o.quoteItemId ?? `${o.rank}-${o.sku}`}>
-                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}><b>{o.tierLabel}</b></td>
+                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}><b>{o.tierLabel ?? o.tier ?? ''}</b></td>
                                 <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{o.brand}</td>
                                 <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{o.model}</td>
                                 <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{o.loadSpeed ?? ""}</td>
