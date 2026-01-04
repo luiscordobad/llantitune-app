@@ -17,11 +17,7 @@ function fmtQuoteNumber(quoteNo: number, createdAt?: string) {
 }
 
 async function getSettingsDefaults() {
-  const {
-        vehicleMake,
-        vehicleModel,
-        vehicleYear,
- data, error } = await supabaseAdmin.from("settings").select("key, value_numeric");
+  const { data, error } = await supabaseAdmin.from("settings").select("key, value_numeric");
   if (error) throw error;
   const map: any = {};
   for (const r of data ?? []) map[r.key] = Number(r.value_numeric ?? 0);
@@ -78,6 +74,10 @@ export async function POST(req: Request) {
     const body = await req.json();
     const defaults = await getSettingsDefaults();
 
+    const vehicleMake = body.vehicleMake ?? null;
+    const vehicleModel = body.vehicleModel ?? null;
+    const vehicleYear = body.vehicleYear ?? null;
+
     const markup = Number(body.markup ?? defaults.default_markup_pct ?? 30);
     const install = Number(body.install ?? defaults.default_install_each ?? 1000);
     const extras = Number(body.extras ?? defaults.default_extras_each ?? 1000);
@@ -122,6 +122,9 @@ export async function POST(req: Request) {
         customer_name: customerName,
         customer_phone: customerPhone,
         vehicle_text: vehicle,
+        vehicle_make: vehicleMake,
+        vehicle_model: vehicleModel,
+        vehicle_year: vehicleYear,
         size: null,
         quantity: 1,
         urgency: null,
