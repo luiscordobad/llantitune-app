@@ -17,7 +17,11 @@ function fmtQuoteNumber(quoteNo: number, createdAt?: string) {
 }
 
 async function getSettingsDefaults() {
-  const { data, error } = await supabaseAdmin.from("settings").select("key, value_numeric");
+  const {
+        vehicleMake,
+        vehicleModel,
+        vehicleYear,
+ data, error } = await supabaseAdmin.from("settings").select("key, value_numeric");
   if (error) throw error;
   const map: any = {};
   for (const r of data ?? []) map[r.key] = Number(r.value_numeric ?? 0);
