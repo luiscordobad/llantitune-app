@@ -250,15 +250,14 @@ export async function POST(req: Request) {
 
       // Tier labeling (Económica / Media / Premium)
       const nOpt = options.length;
-      for (let i = 0; i < options.length; i++) {
+      const tiered = (options as any[]).map((o: any, i: number) => {
         const p = nOpt <= 1 ? 0 : i / (nOpt - 1);
-        (options[i] as any).tier = p <= 0.34 ? 'Económica' : (p <= 0.67 ? 'Media' : 'Premium');
-      }
-        const tier = p <= 0.34 ? 'Económica' : (p <= 0.67 ? 'Media' : 'Premium');
-        return { ...o, tier };
+        const tierLabel = p <= 0.34 ? "Económica" : (p <= 0.67 ? "Media" : "Premium");
+        return { ...o, tierLabel };
       });
 
       // Warning if some options limited
+
       const anyLimited = tiered.some((o: any) => o.limited);
 
       perLineResults.push({
