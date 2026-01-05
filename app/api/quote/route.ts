@@ -152,9 +152,6 @@ export async function POST(req: Request) {
       vehicle_make: ((l as any).vehicleMake ?? null) as any,
       vehicle_model: ((l as any).vehicleModel ?? null) as any,
       vehicle_year: ((l as any).vehicleYear ?? null) as any,
-vehicle_make: (l as any).vehicleMake ?? vehicleMake ?? null,
-      vehicle_model: (l as any).vehicleModel ?? vehicleModel ?? null,
-      vehicle_year: ((l as any).vehicleYear ?? vehicleYear ?? null) as any
     }));
 
     const { data: insertedLines, error: lErr } = await supabaseAdmin
