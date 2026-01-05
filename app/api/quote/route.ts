@@ -21,28 +21,38 @@ function money(n: any) {
 }
 /* ------------------------------------------------- */
 
-async function getSettingsDefaults() {
-  // Si tu tabla/campos se llaman diferente, ajusta aquí.
-  const { data } = await supabaseAdmin
+type SettingsDefaults = {
+  default_markup_pct?: number | null;
+  default_install_each?: number | null;
+  default_extras_each?: number | null;
+  default_min_stock?: number | null;
+};
+
+async function getSettingsDefaults(): Promise<SettingsDefaults> {
+  // If your table/fields differ, adjust select(...) accordingly.
+  const { data, error } = await supabaseAdmin
     .from("settings")
     .select("default_markup_pct, default_install_each, default_extras_each, default_min_stock")
     .single();
-  return data ?? {};
+
+  if (error) return {};
+  // Supabase types are often `any` unless you generated types; cast safely:
+  return (data ?? {}) as SettingsDefaults;
 }
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const body: any = await req.json();
 
     const defaults = await getSettingsDefaults();
 
-    // Internos
-    const markup = Number(body.markup ?? defaults.default_markup_pct ?? 30);
-    const install = Number(body.install ?? defaults.default_install_each ?? 0); // por coche
-    const extras = Number(body.extras ?? defaults.default_extras_each ?? 0);   // por coche
-    const minStock = Number(body.minStock ?? defaults.default_min_stock ?? 0);
+    // Internals
+    const markup = Number(body.markup ?? defaults?.default_markup_pct ?? 30);
+    const install = Number(body.install ?? defaults?.default_install_each ?? 0); // per car
+    const extras = Number(body.extras ?? defaults?.default_extras_each ?? 0);   // per car
+    const minStock = Number(body.minStock ?? defaults?.default_min_stock ?? 0);
 
-    // Cliente
+    // Customer
     const customerName = body.customerName ?? null;
     const customerPhone = cleanPhone(body.customerPhone ?? "") || null;
     const customerEmail = lower(body.customerEmail ?? "") || null;
@@ -70,7 +80,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "lines[] is required" }, { status: 400 });
     }
 
-    // CRÍTICO: NO “tirar” vehicle fields
+    // CRITICAL: don't drop vehicle fields
     const lines = linesIn
       .map((l: any, i: number) => {
         const size = normalizeSizeAny(l.size);
@@ -97,7 +107,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid sizes" }, { status: 400 });
     }
 
-    // Customer insert simple (si tú ya tienes upsert, puedes mantenerlo)
+    // Customer insert (simple). If you already have upsert, keep yours.
     const { data: customer, error: cErr } = await supabaseAdmin
       .from("customers")
       .insert({
@@ -109,7 +119,7 @@ export async function POST(req: Request) {
       .single();
     if (cErr) throw cErr;
 
-    // Quote DRAFT (sin folio final)
+    // Quote DRAFT (no folio yet)
     const { data: q, error: qErr } = await supabaseAdmin
       .from("quotes")
       .insert({
@@ -137,7 +147,7 @@ export async function POST(req: Request) {
     const quoteNo = q.quote_no ?? null;
     const quoteNumber = quoteNo ? `LT-${quoteNo}` : "BORRADOR (sin folio)";
 
-    // Insert quote_lines (FIX vehículo)
+    // Insert quote_lines (vehicle_* FIX)
     const { data: insertedLines, error: lErr } = await supabaseAdmin
       .from("quote_lines")
       .insert(
@@ -155,7 +165,7 @@ export async function POST(req: Request) {
       .select("line_id, line_no, size, quantity, vehicle_index, vehicle_make, vehicle_model, vehicle_year");
     if (lErr) throw lErr;
 
-    // Providers latest snapshot (si tu tabla offers existe así)
+    // Providers latest snapshot (offers table)
     const providers = ["Prodynamics", "Cotizador", "INV"];
     const latest: Record<string, string | null> = {};
     for (const p of providers) {
@@ -168,7 +178,7 @@ export async function POST(req: Request) {
       latest[p] = data?.[0]?.snapshot_date ?? null;
     }
 
-    // Build options per line (para UI)
+    // Build options per line (for UI)
     const perLineResults: any[] = [];
     let hasAnyOptions = false;
 
@@ -238,7 +248,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // ===== Servicios por coche + Total FINAL A ENVIAR =====
+    // ===== Services per car + FINAL total to send =====
     const vehicleSet = new Set<number>();
     (insertedLines ?? []).forEach((l: any) => {
       const vi = Number(l.vehicle_index);
@@ -247,7 +257,7 @@ export async function POST(req: Request) {
     const numVehicles = Math.max(1, vehicleSet.size || vehicles.length || 0);
     const serviceTotal = (install + extras) * numVehicles;
 
-    // Total llantas (estimado = primera opción por medida)
+    // Tires total estimate = first option per line
     const tiresTotalEstimate = (perLineResults ?? []).reduce((sum: number, ln: any) => {
       const first = ln?.options?.[0];
       return sum + money(first?.totalTires);
@@ -255,7 +265,7 @@ export async function POST(req: Request) {
 
     const grandTotal = tiresTotalEstimate + serviceTotal;
 
-    // ===== Mensaje final (AHORA SÍ incluye servicios en el total) =====
+    // ===== Message (now includes services in the total) =====
     const linesText = (perLineResults ?? [])
       .map((ln: any) => {
         const veh = [ln.vehicleMake, ln.vehicleModel, ln.vehicleYear].filter(Boolean).join(" ");
@@ -291,16 +301,13 @@ Total final: $${grandTotal.toFixed(2)}
       providersLatestSnapshot: latest,
       hasAnyOptions,
 
-      // UI
       vehicles,
       lines: perLineResults,
 
-      // mensajes
       whatsappText,
       emailSubject,
       emailBody,
 
-      // internos (incluye servicios por coche y total final)
       internal: {
         markup,
         install,
