@@ -236,6 +236,7 @@ export async function POST(req: Request) {
           stock: o.stock,
           cost: o.cost,
           price_each: o.priceEach,
+          included: true,
           total_tires: o.totalTires,
           total_with_services: o.totalWithServices
         }));

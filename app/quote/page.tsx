@@ -66,10 +66,14 @@ function Combobox({
   );
 }
 
+function fmtMoney(n: number) {
+  return "$" + (Number.isFinite(n) ? n.toFixed(2) : "0.00");
+}
+
 export default function QuotePage() {
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
-  // Customer (all required)
+  // Customer (required)
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -81,12 +85,12 @@ export default function QuotePage() {
   const [yearsByVehicle, setYearsByVehicle] = useState<Record<number, number[]>>({});
   const [vehicleLoading, setVehicleLoading] = useState<string>("");
 
-  // Service/Internal
+  // Internal
   const [depositAmount, setDepositAmount] = useState<number | "">("");
   const [promisedAt, setPromisedAt] = useState<string>("");
   const [internalNotes, setInternalNotes] = useState<string>("");
 
-  // Pricing/internal knobs
+  // Internal knobs
   const [markup, setMarkup] = useState<number>(30);
   const [install, setInstall] = useState<number>(1000);
   const [extras, setExtras] = useState<number>(1000);
@@ -95,8 +99,14 @@ export default function QuotePage() {
   // Lines (multi-size, per-vehicle)
   const [lines, setLines] = useState<Line[]>([{ vehicleIndex: 0, size: "", qty: 4 }]);
 
+  // Draft + options
   const [status, setStatus] = useState("");
-  const [result, setResult] = useState<any>(null); // contains quoteId, lines/options, whatsappText, etc.
+  const [draft, setDraft] = useState<any>(null); // quoteId, quoteNumber (draft), lines with options
+
+  // Message customization (Step 5)
+  const [msgIntro, setMsgIntro] = useState("Hola 👋 Te comparto opciones disponibles:");
+  const [msgOutro, setMsgOutro] = useState("¿Te aparto alguna opción?");
+  const [msgNote, setMsgNote] = useState("");
 
   // Load makes once
   useEffect(() => {
@@ -132,21 +142,16 @@ export default function QuotePage() {
   function addVehicle() {
     const idx = vehicles.length;
     setVehicles((p) => [...p, { make: "", model: "", year: "" }]);
-    // also add a default line for that vehicle
     setLines((p) => [...p, { vehicleIndex: idx, size: "", qty: 1 }]);
   }
 
   function removeVehicle(vIdx: number) {
     if (vehicles.length === 1) return;
     setVehicles((prev) => prev.filter((_, i) => i !== vIdx));
-    // re-map lines
     setLines((prev) =>
       prev
         .filter((l) => l.vehicleIndex !== vIdx)
-        .map((l) => ({
-          ...l,
-          vehicleIndex: l.vehicleIndex > vIdx ? l.vehicleIndex - 1 : l.vehicleIndex,
-        }))
+        .map((l) => ({ ...l, vehicleIndex: l.vehicleIndex > vIdx ? l.vehicleIndex - 1 : l.vehicleIndex }))
     );
   }
 
@@ -160,36 +165,28 @@ export default function QuotePage() {
     setLines((prev) => prev.filter((_, idx) => idx !== i));
   }
 
-  function canNextFromStep1() {
+  function canStep1() {
     return customerName.trim().length >= 2 && customerEmail.trim().includes("@") && customerPhone.trim().length >= 7;
   }
-  function canNextFromStep2() {
+  function canStep2() {
     return vehicles.every((v) => v.make && v.model && v.year);
   }
-  function canNextFromStep4() {
-    const validLines = lines.some((l) => l.size.trim() && (Number(l.qty) || 0) >= 1);
-    return validLines;
-  }
-  function canGoToStep5() {
-    // require selections for each line that has options
-    if (!result?.lines?.length) return false;
-    return result.lines.every((ln: any) => !ln.options?.length || !!ln.selectedQuoteItemId);
+  function canStep4() {
+    return lines.some((l) => l.size.trim() && (Number(l.qty) || 0) >= 1);
   }
 
-  async function generateQuoteDraft() {
-    setStatus("Cotizando (borrador)...");
-    setResult(null);
+  async function buildDraftAndShowOptions() {
+    setStatus("Buscando llantas disponibles...");
+    setDraft(null);
 
-    // Validate required
-    if (!canNextFromStep1()) return setStatus("Completa cliente (nombre, teléfono, email).");
-    if (!canNextFromStep2()) return setStatus("Completa vehículo(s): marca, modelo y año.");
-    if (!canNextFromStep4()) return setStatus("Pon al menos una medida y cantidad.");
+    if (!canStep1()) return setStatus("Completa cliente (nombre, teléfono, email).");
+    if (!canStep2()) return setStatus("Completa vehículo(s): marca, modelo y año.");
+    if (!canStep4()) return setStatus("Pon al menos una medida y cantidad.");
 
     const cleanLines = lines
       .map((l) => ({ ...l, size: l.size.trim(), qty: Number(l.qty) || 0 }))
       .filter((l) => l.size && l.qty >= 1);
 
-    // Attach vehicle fields per line
     const payloadLines = cleanLines.map((l) => {
       const v = vehicles[l.vehicleIndex];
       return { size: l.size, qty: l.qty, vehicleMake: v.make, vehicleModel: v.model, vehicleYear: Number(v.year) };
@@ -202,8 +199,6 @@ export default function QuotePage() {
         lines: payloadLines,
         markup, install, extras, minStock,
         customerName, customerEmail, customerPhone,
-        // header vehicle kept for backward compat but not used for multi
-        vehicle: vehicles.length === 1 ? `${vehicles[0].make} ${vehicles[0].model} ${vehicles[0].year}` : `${vehicles.length} vehículos`,
         depositAmount: depositAmount === "" ? null : Number(depositAmount),
         promisedAt: promisedAt || null,
         internalNotes: internalNotes || null,
@@ -213,95 +208,128 @@ export default function QuotePage() {
     const d = await res.json();
     if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
 
-    // Important: quoteNumber should be null until SENT; show temp label
     d.quoteNumber = d.quoteNumber ?? "BORRADOR (sin folio)";
-    setResult(d);
-    setStatus("Borrador listo ✅ Ahora selecciona llantas por medida y continúa.");
-    setStep(5);
+    setDraft(d);
+    setStatus("✅ Listo. Selecciona qué opciones vas a enviar al cliente (o envía todas).");
   }
 
-  async function chooseOption(quoteLineId: string, quoteItemId: string) {
-  if (!quoteItemId) {
-    setStatus("Error: esta opción no tiene ID (quoteItemId). Revisa que se estén insertando quote_items.");
-    return;
-  }
-  setStatus("Guardando selección...");
-  try {
-    const res = await fetch("/api/quote/select", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ quoteId: result?.quoteId, lineId: quoteLineId, quoteItemId }),
-    });
-
-    let d: any = null;
-    try { d = await res.json(); } catch { d = null; }
-
-    if (!res.ok) {
-      setStatus("Error al guardar selección: " + (d?.error ?? `${res.status}`));
-      return;
-    }
-
-    // Update local state
-    setResult((prev: any) => {
+  async function setIncluded(quoteItemId: string, included: boolean) {
+    setDraft((prev: any) => {
       if (!prev) return prev;
-      const lines = (prev.lines ?? []).map((ln: any) =>
-        ln.lineId === quoteLineId ? { ...ln, selectedQuoteItemId: quoteItemId } : ln
-      );
+      const lines = (prev.lines ?? []).map((ln: any) => ({
+        ...ln,
+        options: (ln.options ?? []).map((o: any) => (o.quoteItemId === quoteItemId ? { ...o, included } : o)),
+      }));
       return { ...prev, lines };
     });
 
-    setStatus("Selección guardada ✅");
-  } catch (e: any) {
-    setStatus("Error al guardar selección: " + (e?.message ?? String(e)));
-  }
-}
-
-async function markSent() {
-    if (!result?.quoteId) return;
-    if (!canGoToStep5()) return setStatus("Selecciona una opción por cada medida antes de enviar.");
-    setStatus("Marcando ENVIADA y asignando folio...");
-    const res = await fetch("/api/admin/quote/status", {
+    const res = await fetch("/api/quote/include", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ quoteId: result.quoteId, status: "SENT" }),
+      body: JSON.stringify({ quoteItemId, included }),
     });
     const d = await res.json();
-    if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
-    // refresh quote info if endpoint returns quote_number; if not, keep and suggest refresh
-    if (d?.quoteNumber) { setResult((prev:any)=> prev ? ({...prev, quoteNumber: d.quoteNumber}) : prev); }
-    setStatus("ENVIADA ✅ (folio asignado).");
+    if (!res.ok) setStatus("Error guardando selección: " + (d.error ?? "unknown"));
+  }
+
+  function toggleAllInLine(lineId: string, includeAll: boolean) {
+    const ln = (draft?.lines ?? []).find((x: any) => x.lineId === lineId);
+    if (!ln) return;
+    for (const o of ln.options ?? []) setIncluded(o.quoteItemId, includeAll);
+  }
+
+  function lineHasAtLeastOneIncluded(line: any) {
+    const opts = line.options ?? [];
+    return opts.some((o: any) => o.included !== false);
+  }
+
+  function canProceedToStep5() {
+    if (!draft?.lines?.length) return false;
+    return draft.lines.every((ln: any) => (ln.options?.length ? lineHasAtLeastOneIncluded(ln) : true));
+  }
+
+  function buildPreviewText() {
+    const qn = draft?.quoteNumber ?? "BORRADOR";
+    const linesTxt: string[] = [];
+    for (const ln of draft?.lines ?? []) {
+      const vehicle = [ln.vehicleMake, ln.vehicleModel, ln.vehicleYear].filter(Boolean).join(" ");
+      linesTxt.push(`• ${ln.size} (solicitado x${ln.requestedQty}) — ${vehicle}`);
+      const opts = (ln.options ?? []).filter((o: any) => o.included !== false);
+      for (const o of opts) {
+        linesTxt.push(`  - ${o.tierLabel}: ${o.brand} ${o.model} ${o.loadSpeed ?? ""} | ${fmtMoney(o.priceEach)} c/u | Total: ${fmtMoney(o.totalTires)}`);
+      }
+      linesTxt.push("");
+    }
+
+    const header = [
+      "Llantitune ✅ Cotización",
+      `No. ${qn}`,
+      `Cliente: ${customerName}`,
+      `Tel: ${customerPhone}`,
+      `Email: ${customerEmail}`,
+      "",
+      msgIntro,
+      msgNote ? `Nota: ${msgNote}` : "",
+      "",
+    ].filter(Boolean);
+
+    const footer = ["", msgOutro].filter(Boolean);
+
+    return [...header, ...linesTxt, ...footer].join("\n");
   }
 
   async function downloadPDF() {
-    if (!result?.quoteId) return;
-    const res = await fetch("/api/pdf?quoteId=" + encodeURIComponent(result.quoteId));
+    if (!draft?.quoteId) return;
+    const res = await fetch("/api/pdf?quoteId=" + encodeURIComponent(draft.quoteId));
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = (result?.quoteNumber ?? "cotizacion") + ".pdf";
+    a.download = ((draft?.quoteNumber ?? "BORRADOR") + ".pdf").replaceAll("/", "-");
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  function copyWhatsappText() {
-    if (!result?.whatsappText) return;
-    navigator.clipboard.writeText(result.whatsappText);
-    setStatus("Texto copiado ✅");
+  async function sendAndAssignFolio() {
+    if (!draft?.quoteId) return;
+    if (!canProceedToStep5()) return setStatus("Selecciona al menos 1 opción por cada medida.");
+    setStatus("Enviando y asignando folio...");
+    const res = await fetch("/api/admin/quote/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ quoteId: draft.quoteId, status: "SENT" }),
+    });
+    const d = await res.json();
+    if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
+    setStatus("✅ ENVIADA. Ya puedes mandarla por WhatsApp o correo.");
+    if (d.quote_number) setDraft((p: any) => ({ ...p, quoteNumber: d.quote_number }));
+  }
+
+  function openWhatsapp() {
+    const txt = buildPreviewText();
+    const url = "https://wa.me/?text=" + encodeURIComponent(txt);
+    window.open(url, "_blank");
+  }
+
+  function prepareEmail() {
+    const subject = `Llantitune Cotización ${draft?.quoteNumber ?? "BORRADOR"}`;
+    const body = buildPreviewText();
+    const mailto = `mailto:${encodeURIComponent(customerEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailto;
   }
 
   const stepTitle = {
     1: "1) Datos del cliente (obligatorio)",
     2: "2) Vehículo(s) (obligatorio)",
     3: "3) Anticipo / fecha promesa / notas (interno)",
-    4: "4) Medidas y cantidades",
-    5: "5) Elegir llantas y enviar",
+    4: "4) Medidas + seleccionar opciones a enviar",
+    5: "5) Personalizar mensaje + previsualizar + enviar",
   }[step];
 
   return (
-    <div style={{ maxWidth: 1040 }}>
+    <div style={{ maxWidth: 1100 }}>
       <h2>Cotizador Llantitune</h2>
-      <div style={{ color: "#666", marginTop: -8 }}>Flujo guiado: cliente → vehículo(s) → internos → medidas → elegir y enviar</div>
+      <div style={{ color: "#666", marginTop: -8 }}>Flujo guiado: cliente → vehículo(s) → internos → medidas → seleccionar → previsualizar y enviar</div>
 
       <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
         {[1, 2, 3, 4, 5].map((s) => (
@@ -325,13 +353,6 @@ async function markSent() {
 
       <div style={{ marginTop: 12, padding: 14, border: "1px solid #eee", borderRadius: 14, background: "#fafafa" }}>
         <b>{stepTitle}</b>
-        <div style={{ color: "#666", marginTop: 6 }}>
-          {step === 1 && "Nombre, teléfono y email son obligatorios para poder enviar."}
-          {step === 2 && "Puedes agregar más de un vehículo (por ejemplo, del mismo cliente)."}
-          {step === 3 && "Interno: anticipo, promesa, notas. Se guarda en la orden."}
-          {step === 4 && "Agrega medidas por vehículo. Cantidad se escribe manual y se limita por stock."}
-          {step === 5 && "Ves lo disponible, eliges la opción por medida y luego la ENVIAS (folio se asigna al enviar)."}
-        </div>
       </div>
 
       <div style={{ marginTop: 12, color: "#555" }}>{status}</div>
@@ -362,14 +383,13 @@ async function markSent() {
             <button
               type="button"
               onClick={() => setStep(2)}
-              disabled={!canNextFromStep1()}
+              disabled={!canStep1()}
               style={{
                 padding: "10px 14px",
                 borderRadius: 12,
                 border: "1px solid #111",
-                background: canNextFromStep1() ? "#111" : "#ddd",
-                color: canNextFromStep1() ? "white" : "#666",
-                cursor: canNextFromStep1() ? "pointer" : "not-allowed",
+                background: canStep1() ? "#111" : "#ddd",
+                color: canStep1() ? "white" : "#666",
               }}
             >
               Siguiente →
@@ -378,7 +398,7 @@ async function markSent() {
         </div>
       ) : null}
 
-      {/* STEP 2 Vehicles */}
+      {/* STEP 2 */}
       {step === 2 ? (
         <div style={{ marginTop: 12, border: "1px solid #ddd", borderRadius: 14, padding: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -451,14 +471,13 @@ async function markSent() {
             <button
               type="button"
               onClick={() => setStep(3)}
-              disabled={!canNextFromStep2()}
+              disabled={!canStep2()}
               style={{
                 padding: "10px 14px",
                 borderRadius: 12,
                 border: "1px solid #111",
-                background: canNextFromStep2() ? "#111" : "#ddd",
-                color: canNextFromStep2() ? "white" : "#666",
-                cursor: canNextFromStep2() ? "pointer" : "not-allowed",
+                background: canStep2() ? "#111" : "#ddd",
+                color: canStep2() ? "white" : "#666",
               }}
             >
               Siguiente →
@@ -496,7 +515,7 @@ async function markSent() {
 
           <details style={{ marginTop: 12 }}>
             <summary style={{ cursor: "pointer", color: "#333" }}>
-              Ajustes de precio/servicios (interno) — normalmente no se tocan
+              Ajustes internos (markup/servicios/stock mínimo)
             </summary>
             <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr 1fr 1fr", marginTop: 10 }}>
               <label style={{ display: "grid", gap: 6 }}>
@@ -576,11 +595,7 @@ async function markSent() {
 
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontWeight: 600 }}>Cantidad</span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={l.qty}
+                  <input type="text" inputMode="numeric" pattern="[0-9]*" value={l.qty}
                     onChange={(e) => updateLine(idx, { qty: Number(e.target.value) || 0 })}
                     style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
                   />
@@ -604,75 +619,50 @@ async function markSent() {
             </button>
             <button
               type="button"
-              onClick={generateQuoteDraft}
-              disabled={!canNextFromStep4()}
+              onClick={buildDraftAndShowOptions}
+              disabled={!canStep4()}
               style={{
                 padding: "10px 14px",
                 borderRadius: 12,
                 border: "1px solid #111",
-                background: canNextFromStep4() ? "#111" : "#ddd",
-                color: canNextFromStep4() ? "white" : "#666",
-                cursor: canNextFromStep4() ? "pointer" : "not-allowed",
+                background: canStep4() ? "#111" : "#ddd",
+                color: canStep4() ? "white" : "#666",
               }}
             >
               Ver llantas disponibles →
             </button>
           </div>
-        </div>
-      ) : null}
 
-      {/* STEP 5 */}
-      {step === 5 ? (
-        <div style={{ marginTop: 12, border: "1px solid #ddd", borderRadius: 14, padding: 14 }}>
-          {!result ? (
-            <div style={{ color: "#666" }}>Primero genera el borrador en el Paso 4.</div>
-          ) : (
-            <>
-              <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 18 }}><b>{result.quoteNumber ?? "BORRADOR (sin folio)"}</b></div>
-                  <div style={{ color: "#666" }}>{customerName} — {customerPhone} — {customerEmail}</div>
-                </div>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <button type="button" onClick={copyWhatsappText} disabled={!result?.quoteNumber || String(result.quoteNumber).includes("BORRADOR")} style={{opacity: (!result?.quoteNumber || String(result.quoteNumber).includes("BORRADOR")) ? 0.5 : 1}}>Copiar WhatsApp</button>
-                  <button type="button" onClick={downloadPDF} disabled={!result?.quoteNumber || String(result.quoteNumber).includes("BORRADOR")} style={{opacity: (!result?.quoteNumber || String(result.quoteNumber).includes("BORRADOR")) ? 0.5 : 1}}>Descargar PDF</button>
-                  <button
-                    type="button"
-                    onClick={markSent}
-                    disabled={!canGoToStep5()}
-                    style={{
-                      padding: "8px 12px",
-                      borderRadius: 12,
-                      border: "1px solid #111",
-                      background: canGoToStep5() ? "#111" : "#ddd",
-                      color: canGoToStep5() ? "white" : "#666",
-                      cursor: canGoToStep5() ? "pointer" : "not-allowed",
-                    }}
-                  >
-                    Enviar (asigna folio)
-                  </button>
-                </div>
+          {draft ? (
+            <div style={{ marginTop: 18 }}>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Llantas disponibles (elige cuáles vas a enviar)</div>
+              <div style={{ color: "#666", marginBottom: 10 }}>
+                Cliente: <b>{customerName}</b> — {customerPhone} — {customerEmail}
               </div>
 
-              <div style={{ marginTop: 12, display: "grid", gap: 14 }}>
-                {(result.lines ?? []).map((line: any) => (
-                  <div key={line.lineId} style={{ border: "1px solid #e5e5e5", borderRadius: 14, padding: 12, background: "white" }}>
+              <div style={{ display: "grid", gap: 14 }}>
+                {(draft.lines ?? []).map((ln: any) => (
+                  <div key={ln.lineId} style={{ border: "1px solid #eee", borderRadius: 14, padding: 12, background: "white" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                       <div>
-                        <div><b>Medida:</b> {line.size} &nbsp; <b>Solicitado:</b> {line.requestedQty}</div>
+                        <div><b>Medida:</b> {ln.size} &nbsp; <b>Solicitado:</b> {ln.requestedQty}</div>
                         <div style={{ color: "#666", marginTop: 4 }}>
-                          <b>Vehículo:</b> {line.vehicleMake ?? ""} {line.vehicleModel ?? ""} {line.vehicleYear ?? ""}
+                          <b>Vehículo:</b> {[ln.vehicleMake, ln.vehicleModel, ln.vehicleYear].filter(Boolean).join(" ")}
                         </div>
-                        {line.notice ? <div style={{ color: "#b45309", marginTop: 6 }}><b>Nota:</b> {line.notice}</div> : null}
+                        {ln.notice ? <div style={{ color: "#b45309", marginTop: 6 }}><b>Nota:</b> {ln.notice}</div> : null}
                       </div>
-                      {line.selectedQuoteItemId ? <div style={{ color: "#16a34a" }}><b>Elegida ✅</b></div> : <div style={{ color: "#b45309" }}><b>Falta elegir</b></div>}
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <button type="button" onClick={() => toggleAllInLine(ln.lineId, true)} style={{ padding: "6px 10px", borderRadius: 10, border: "1px solid #ddd", background: "white" }}>Enviar todas</button>
+                        <button type="button" onClick={() => toggleAllInLine(ln.lineId, false)} style={{ padding: "6px 10px", borderRadius: 10, border: "1px solid #ddd", background: "white" }}>Quitar todas</button>
+                      </div>
                     </div>
 
-                    <div style={{ marginTop: 10 }}>
-                      {line.options?.length ? (
-                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    {ln.options?.length ? (
+                      <div style={{ marginTop: 10, overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
                           <thead>
                             <tr>
+                              <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Enviar</th>
                               <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Gama</th>
                               <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Marca</th>
                               <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Modelo</th>
@@ -681,50 +671,113 @@ async function markSent() {
                               <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Cotizable</th>
                               <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Precio c/u</th>
                               <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Total</th>
-                              <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}></th>
                             </tr>
                           </thead>
                           <tbody>
-                            {line.options.map((o: any) => (
-                              <tr key={o.quoteItemId ?? `${o.rank}-${o.sku}`}>
-                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}><b>{o.tierLabel ?? o.tier ?? ''}</b></td>
+                            {ln.options.map((o: any) => (
+                              <tr key={o.quoteItemId} style={{ opacity: o.included === false ? 0.45 : 1 }}>
+                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={o.included !== false}
+                                    onChange={(e) => setIncluded(o.quoteItemId, e.target.checked)}
+                                  />
+                                </td>
+                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}><b>{o.tierLabel}</b></td>
                                 <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{o.brand}</td>
                                 <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{o.model}</td>
                                 <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{o.loadSpeed ?? ""}</td>
                                 <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>{o.stock}</td>
-                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>
-                                  {o.quotedQty}{o.limited ? <span style={{ color: "#b45309" }}> *</span> : null}
-                                </td>
-                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>${o.priceEach.toFixed(2)}</td>
-                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>${o.totalTires.toFixed(2)}</td>
-                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>
-                                  <button
-                                    type="button"
-                                    onClick={() => chooseOption(line.lineId, o.quoteItemId)}
-                                    style={{
-                                      padding: "6px 10px",
-                                      borderRadius: 10,
-                                      border: "1px solid #111",
-                                      background: line.selectedQuoteItemId === o.quoteItemId ? "#111" : "white",
-                                      color: line.selectedQuoteItemId === o.quoteItemId ? "white" : "#111",
-                                    }}
-                                  >
-                                    {line.selectedQuoteItemId === o.quoteItemId ? "Elegida" : "Elegir"}
-                                  </button>
-                                </td>
+                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>{o.quotedQty}</td>
+                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>{fmtMoney(o.priceEach)}</td>
+                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>{fmtMoney(o.totalTires)}</td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
-                      ) : (
-                        <div style={{ color: "#666" }}>Sin opciones con stock mínimo.</div>
-                      )}
-                      <div style={{ color: "#666", fontSize: 12, marginTop: 8 }}>
-                        * Si aparece asterisco, la cantidad cotizable se limitó por stock.
                       </div>
-                    </div>
+                    ) : (
+                      <div style={{ color: "#666", marginTop: 10 }}>Sin opciones con stock mínimo.</div>
+                    )}
                   </div>
                 ))}
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+                <button
+                  type="button"
+                  onClick={() => setStep(5)}
+                  disabled={!canProceedToStep5()}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 12,
+                    border: "1px solid #111",
+                    background: canProceedToStep5() ? "#111" : "#ddd",
+                    color: canProceedToStep5() ? "white" : "#666",
+                  }}
+                >
+                  Continuar a mensaje y envío →
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* STEP 5 */}
+      {step === 5 ? (
+        <div style={{ marginTop: 12, border: "1px solid #ddd", borderRadius: 14, padding: 14 }}>
+          {!draft ? (
+            <div style={{ color: "#666" }}>Primero ve opciones en el Paso 4.</div>
+          ) : (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 18 }}><b>{draft.quoteNumber ?? "BORRADOR (sin folio)"}</b></div>
+                  <div style={{ color: "#666" }}>
+                    Cliente: <b>{customerName}</b> — {customerPhone} — {customerEmail}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button type="button" onClick={downloadPDF}>Descargar PDF</button>
+                  <button
+                    type="button"
+                    onClick={sendAndAssignFolio}
+                    style={{ padding: "8px 12px", borderRadius: 12, border: "1px solid #111", background: "#111", color: "white" }}
+                  >
+                    Enviar (genera folio)
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontWeight: 600 }}>Texto inicial</span>
+                  <input value={msgIntro} onChange={(e) => setMsgIntro(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
+                </label>
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontWeight: 600 }}>Texto final</span>
+                  <input value={msgOutro} onChange={(e) => setMsgOutro(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
+                </label>
+                <label style={{ display: "grid", gap: 6, gridColumn: "1 / span 2" }}>
+                  <span style={{ fontWeight: 600 }}>Nota adicional (opcional)</span>
+                  <input value={msgNote} onChange={(e) => setMsgNote(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
+                </label>
+              </div>
+
+              <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button type="button" onClick={() => navigator.clipboard.writeText(buildPreviewText())}>Copiar texto</button>
+                <button type="button" onClick={openWhatsapp}>Abrir WhatsApp</button>
+                <button type="button" onClick={prepareEmail}>Preparar correo</button>
+              </div>
+
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>Previsualización (antes de enviar)</div>
+                <textarea
+                  value={buildPreviewText()}
+                  readOnly
+                  style={{ width: "100%", minHeight: 360, padding: 12, borderRadius: 12, border: "1px solid #ddd", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
+                />
               </div>
             </>
           )}
