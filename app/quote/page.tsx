@@ -208,7 +208,7 @@ export default function QuotePage() {
       };
     });
 
-    const res = await fetch("/api/quote", , {
+    const res = await fetch("/api/quote", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
