@@ -4,20 +4,7 @@ import { normalizeSizeAny } from "@/lib/normalize";
 
 export const runtime = "nodejs";
 
-type VehicleIn = { make?: string | null; model?: string | null; year?: number | string | null };
-type LineIn = {
-  size: string;
-  qty: number;
-  vehicleIndex?: number | null;
-  vehicleMake?: string | null;
-  vehicleModel?: string | null;
-  vehicleYear?: number | string | null;
-};
-
-function toIntOrNull(v: any) {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.trunc(n) : null;
-}
+type LineIn = { size: string; qty: number; vehicleMake?: string | null; vehicleModel?: string | null; vehicleYear?: number | null };
 
 function digitsOnly(s: string) { return (s ?? "").replace(/\D/g, ""); }
 function lower(s: string) { return (s ?? "").trim().toLowerCase(); }
@@ -85,15 +72,13 @@ function pickBuckets(options: any[]) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    
+    const vehicles = (body as any).vehicles ?? [];
+const defaults = await getSettingsDefaults();
 
-    // Vehicles can be sent at quote level (vehicles[]) and/or per-line (vehicleIndex + vehicleMake/Model/Year)
-    const vehicles: VehicleIn[] = Array.isArray((body as any).vehicles) ? (body as any).vehicles : [];
-    const defaults = await getSettingsDefaults();
-
-    // (optional) quote-level vehicle (legacy / single-vehicle)
     const vehicleMake = body.vehicleMake ?? null;
     const vehicleModel = body.vehicleModel ?? null;
-    const vehicleYear = toIntOrNull(body.vehicleYear ?? null);
+    const vehicleYear = body.vehicleYear ?? null;
 
     const markup = Number(body.markup ?? defaults.default_markup_pct ?? 30);
     const install = Number(body.install ?? defaults.default_install_each ?? 1000);
@@ -103,17 +88,9 @@ export async function POST(req: Request) {
     const linesIn: LineIn[] = Array.isArray(body.lines) ? body.lines : [];
     if (!linesIn.length) return NextResponse.json({ error: "Missing lines" }, { status: 400 });
 
-    // IMPORTANT: keep vehicle fields on each line (do NOT strip them)
     const lines = linesIn
-      .map((l) => ({
-        size: normalizeSizeAny(l.size),
-        qty: Math.max(1, Number(l.qty ?? 1)),
-        vehicleIndex: (Number.isFinite(Number(l.vehicleIndex)) ? Number(l.vehicleIndex) : null),
-        vehicleMake: (l.vehicleMake ?? null),
-        vehicleModel: (l.vehicleModel ?? null),
-        vehicleYear: (l.vehicleYear ?? null),
-      }))
-      .filter((l) => !!l.size);
+      .map(l => ({ size: normalizeSizeAny(l.size), qty: Math.max(1, Number(l.qty ?? 1)) }))
+      .filter(l => !!l.size) as { size: string; qty: number }[];
 
     if (!lines.length) return NextResponse.json({ error: "Invalid sizes" }, { status: 400 });
 
@@ -169,40 +146,32 @@ export async function POST(req: Request) {
 
     // Insert quote_lines
     const lineRows = (lines ?? []).map((l: any, i: number) => {
-      const vi = Number(l.vehicleIndex);
-      const v: VehicleIn = (vehicles ?? [])[Number.isFinite(vi) ? vi : -1] ?? {};
+      const vi = Number((l as any).vehicleIndex);
+      const v = (vehicles ?? [])[Number.isFinite(vi) ? vi : -1] ?? {};
       return {
         quote_id: quoteId,
         line_no: i + 1,
         size: l.size,
         quantity: l.qty,
         vehicle_index: Number.isFinite(vi) ? vi : null,
-        vehicle_make: (l.vehicleMake ?? v.make ?? null) as any,
-        vehicle_model: (l.vehicleModel ?? v.model ?? null) as any,
-        vehicle_year: toIntOrNull(l.vehicleYear ?? v.year ?? null),
+        vehicle_make: (l as any).vehicleMake ?? v.make ?? null,
+        vehicle_model: (l as any).vehicleModel ?? v.model ?? null,
+        vehicle_year: ((l as any).vehicleYear ?? v.year ?? null) as any,
       };
     });
 
     const { data: insertedLines, error: lErr } = await supabaseAdmin
       .from("quote_lines")
       .insert(lineRows)
-      .select("line_id, line_no, size, quantity, vehicle_index, vehicle_make, vehicle_model, vehicle_year");
+      .select("line_id, line_no, size, quantity, vehicle_make, vehicle_model, vehicle_year");
     if (lErr) throw lErr;
 
     const perLineResults: any[] = [];
     let hasAnyOptions = false;
 
-    // Vehicles referenced in this quote (used for per-car services)
-    const vehicleSet = new Set<number>();
-    for (const ln of insertedLines ?? []) {
-      const vi = Number((ln as any).vehicle_index);
-      if (Number.isFinite(vi)) vehicleSet.add(vi);
-    }
-    const numVehicles = Math.max(1, vehicleSet.size || 0);
-    const serviceTotal = (install + extras) * numVehicles;
-
     for (const line of insertedLines ?? []) {
       const size = line.size as string;
+      const lineVehicle = [line.vehicle_make, line.vehicle_model, line.vehicle_year].filter(Boolean).join(' ');
       const requestedQty = Number(line.quantity);
 
       const all: any[] = [];
@@ -233,8 +202,8 @@ export async function POST(req: Request) {
         const priceEach = Math.round(cost * (1 + markup / 100));
 
         const totalTires = priceEach * quotedQty;
-        // services are per-vehicle and MUST NOT be shown to the customer.
-        // totals here are tires-only; internal totals are computed at quote level.
+        const totalServices = 0; // services are per-vehicle (handled at quote level)
+        const total = totalTires + totalServices;
 
         return {
           rank: idx + 1,
@@ -251,7 +220,8 @@ export async function POST(req: Request) {
           limited,
           cost,
           priceEach,
-          totalTires
+          totalTires,
+          totalWithServices: total
         };
       }).filter(o => o.quotedQty > 0); // never offer 0
 
@@ -294,6 +264,16 @@ export async function POST(req: Request) {
         return { ...o, tierLabel };
       });
 
+      // Warning if some options limited
+
+      const vehicleSet2 = new Set<number>();
+      for (const ln of insertedLines ?? []) {
+        const vi = Number((ln as any).vehicle_index);
+        if (!Number.isNaN(vi) && vi !== null) vehicleSet2.add(vi);
+      }
+      const numVehicles = Math.max(1, vehicleSet2.size || 0);
+      const serviceTotal = (install + extras) * numVehicles;
+      
       const anyLimited = tiered.some((o: any) => o.limited);
 
       perLineResults.push({
@@ -301,10 +281,6 @@ export async function POST(req: Request) {
         lineNo: line.line_no,
         size,
         requestedQty,
-        vehicleIndex: (line as any).vehicle_index ?? null,
-        vehicleMake: (line as any).vehicle_make ?? null,
-        vehicleModel: (line as any).vehicle_model ?? null,
-        vehicleYear: (line as any).vehicle_year ?? null,
         options: tiered,
         anyLimited
       });
@@ -322,7 +298,7 @@ ${customerName ? `Cliente: ${customerName}\n` : ""}${vehicle ? `Vehículo: ${veh
 
   const lines = opts.map((o: any, i: number) => {
     const qtyText = o.limited ? ` (Disponible x${o.quotedQty})` : "";
-    return `  #${i + 1} [${o.tierLabel}] ${o.brand} | ${o.loadSpeed ?? ""} | $${o.priceEach} c/u | Total: $${o.totalWithServices}${qtyText}`;
+    return `  #${i + 1} [${o.tier}] ${o.brand} | ${o.loadSpeed ?? ""} | $${o.priceEach} c/u | Total: $${o.totalWithServices}${qtyText}`;
   });
 
   const note = opts.some((o: any) => o.limited)
@@ -332,9 +308,8 @@ ${customerName ? `Cliente: ${customerName}\n` : ""}${vehicle ? `Vehículo: ${veh
   return `• ${lr.size} (solicitado x${lr.requestedQty}):\n${lines.join("\n")}${note ? "\n" + note : ""}`;
 }).join("\n\n");
 
-    const whatsappText =
-      header + "\n" + bodyText + "\n\nResponde con el número de opción (por medida) para apartarla.\n\n" +
-      "¿Te aparto alguna opción?";
+const whatsappText = header + "\n" + bodyText + "\n\nResponde con el número de opción (por medida) para apartarla.";
+ + "\n" + bodyText + "\n\n¿Te aparto alguna opción?";
 
     const emailSubject = `Cotización Llantitune${quoteNumber ? ' – ' + quoteNumber : ''}`;
     const emailBody =
@@ -350,7 +325,7 @@ ${perLineResults.map((lr: any) => {
   const anyLimited = opts.some((o: any) => o.limited);
   const bullets = opts.map((o: any, i: number) => {
     const qtyText = o.limited ? ` (Disponible x${o.quotedQty})` : "";
-    return `  • #${i+1} [${o.tierLabel}] ${o.brand} ${o.loadSpeed ?? ""} – $${o.priceEach} c/u (Total: $${o.totalWithServices})${qtyText}`;
+    return `  • #${i+1} [${o.tier}] ${o.brand} ${o.loadSpeed ?? ""} – $${o.priceEach} c/u (Total: $${o.totalWithServices})${qtyText}`;
   }).join("\n");
 
   const note = anyLimited ? `\n  ⚠️ Nota: Algunas opciones tienen stock limitado hoy.` : "";
@@ -373,14 +348,6 @@ Llantitune`;
       whatsappText,
       emailSubject,
       emailBody,
-      // Internal summary (NOT shown to customer)
-      numVehicles,
-      serviceTotal,
-      // A simple estimate: sum of the cheapest option per line (rank 1) + services.
-      // UI can compute a different total later if you want (e.g., based on selections).
-      tiresTotalEstimate: perLineResults.reduce((sum, lr: any) => sum + Number(lr?.options?.[0]?.totalTires ?? 0), 0),
-      grandTotal:
-        perLineResults.reduce((sum, lr: any) => sum + Number(lr?.options?.[0]?.totalTires ?? 0), 0) + serviceTotal,
       internal: { markup, install, extras, minStock }
     });
   } catch (e: any) {
