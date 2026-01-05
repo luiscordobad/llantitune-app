@@ -196,8 +196,8 @@ export default function QuotePage() {
       .filter((l) => l.size && l.qty >= 1);
 
     const payloadLines = cleanLines.map((l) => {
-      const v = vehicles[l.vehicleIndex];
-      return { size: l.size, qty: l.qty, vehicleMake: v.make, vehicleModel: v.model, vehicleYear: Number(v.year) };
+      const v = (vehicles as any[])[Number((l as any).vehicleIndex)] ?? {};
+      return { size: l.size, qty: l.qty, vehicleIndex: (l as any).vehicleIndex ?? null, vehicleMake: v.make ?? null, vehicleModel: v.model ?? null, vehicleYear: (v.year != null ? Number(v.year) : null) };
     });
 
     const linesWithVehicle = (lines ?? []).map((l: any) => {
@@ -210,6 +210,8 @@ export default function QuotePage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         lines: payloadLines,
+        vehicles,
+
         markup, install, extras, minStock,
         customerName, customerEmail, customerPhone,
         depositAmount: depositAmount === "" ? null : Number(depositAmount),
@@ -768,6 +770,16 @@ export default function QuotePage() {
                   <b>Nota:</b> Aún es borrador. Pulsa <b>Enviar (genera folio)</b> para asignar el número de cotización y habilitar WhatsApp/Correo.
                 </div>
               ) : null}
+
+                
+                {draft?.serviceTotal != null ? (
+                  <div style={{ marginTop: 10, background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
+                    <div><b>Resumen interno</b></div>
+                    <div style={{ marginTop: 6 }}><b>Vehículos:</b> {draft.numVehicles ?? 1}</div>
+                    <div><b>Servicios (por coche):</b> ${Number(draft.serviceTotal || 0).toFixed(2)}</div>
+                    <div><b>Total estimado (llantas + servicios):</b> ${Number(draft.grandTotal || 0).toFixed(2)}</div>
+                  </div>
+                ) : null}
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <button type="button" onClick={downloadPDF}>Descargar PDF</button>

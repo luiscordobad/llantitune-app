@@ -72,7 +72,9 @@ function pickBuckets(options: any[]) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const defaults = await getSettingsDefaults();
+    
+    const vehicles = (body as any).vehicles ?? [];
+const defaults = await getSettingsDefaults();
 
     const vehicleMake = body.vehicleMake ?? null;
     const vehicleModel = body.vehicleModel ?? null;
@@ -148,12 +150,12 @@ export async function POST(req: Request) {
       line_no: i + 1,
       size: l.size,
       quantity: l.qty,
-            vehicle_index: ((l as any).vehicleIndex ?? null) as any,
-      vehicle_make: ((l as any).vehicleMake ?? null) as any,
-      vehicle_model: ((l as any).vehicleModel ?? null) as any,
-      vehicle_year: ((l as any).vehicleYear ?? null) as any,
-    }));
-
+            vehicle_index: (((l as any).vehicleIndex ?? null) as any),
+      vehicle_make: (((l as any).vehicleMake ?? v.make ?? null) as any),
+      vehicle_model: (((l as any).vehicleModel ?? v.model ?? null) as any),
+      vehicle_year: (((l as any).vehicleYear ?? v.year ?? null) as any),
+    });
+    });
     const { data: insertedLines, error: lErr } = await supabaseAdmin
       .from("quote_lines")
       .insert(lineRows)
@@ -196,7 +198,7 @@ export async function POST(req: Request) {
         const priceEach = Math.round(cost * (1 + markup / 100));
 
         const totalTires = priceEach * quotedQty;
-        const totalServices = (install + extras) * quotedQty;
+        const totalServices = 0; // services are per-vehicle (handled at quote level)
         const total = totalTires + totalServices;
 
         return {
@@ -260,6 +262,14 @@ export async function POST(req: Request) {
 
       // Warning if some options limited
 
+      const vehicleSet2 = new Set<number>();
+      for (const ln of insertedLines ?? []) {
+        const vi = Number((ln as any).vehicle_index);
+        if (!Number.isNaN(vi) && vi !== null) vehicleSet2.add(vi);
+      }
+      const numVehicles = Math.max(1, vehicleSet2.size || 0);
+      const serviceTotal = (install + extras) * numVehicles;
+      
       const anyLimited = tiered.some((o: any) => o.limited);
 
       perLineResults.push({
