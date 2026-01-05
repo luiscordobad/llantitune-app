@@ -195,17 +195,20 @@ export default function QuotePage() {
       .map((l) => ({ ...l, size: l.size.trim(), qty: Number(l.qty) || 0 }))
       .filter((l) => l.size && l.qty >= 1);
 
-    const payloadLines = cleanLines.map((l) => {
-      const v = (vehicles as any[])[Number((l as any).vehicleIndex)] ?? {};
-      return { size: l.size, qty: l.qty, vehicleIndex: (l as any).vehicleIndex ?? null, vehicleMake: v.make ?? null, vehicleModel: v.model ?? null, vehicleYear: (v.year != null ? Number(v.year) : null) };
+    const payloadLines = cleanLines.map((l: any) => {
+      const vi = Number((l as any).vehicleIndex ?? (l as any).vehicle_index);
+      const v = (vehicles as any[])[Number.isFinite(vi) ? vi : -1] ?? {};
+      return {
+        size: l.size,
+        qty: Number(l.qty) || 0,
+        vehicleIndex: Number.isFinite(vi) ? vi : null,
+        vehicleMake: (l as any).vehicleMake ?? v.make ?? null,
+        vehicleModel: (l as any).vehicleModel ?? v.model ?? null,
+        vehicleYear: ((l as any).vehicleYear ?? v.year ?? null) as any,
+      };
     });
 
-    const linesWithVehicle = (lines ?? []).map((l: any) => {
-      const v = (vehicles ?? [])[Number((l as any).vehicleIndex)] ?? {};
-      return { ...l, vehicleMake: v.make ?? null, vehicleModel: v.model ?? null, vehicleYear: v.year ?? null };
-    });
-
-    const res = await fetch("/api/quote", {
+    const res = await fetch("/api/quote", , {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
