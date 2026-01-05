@@ -145,17 +145,21 @@ const defaults = await getSettingsDefaults();
     const quoteNumber: string | null = null; // folio se asigna al enviar (status SENT)
 
     // Insert quote_lines
-    const lineRows = lines.map((l, i) => ({
-      quote_id: quoteId,
-      line_no: i + 1,
-      size: l.size,
-      quantity: l.qty,
-            vehicle_index: (((l as any).vehicleIndex ?? null) as any),
-      vehicle_make: (((l as any).vehicleMake ?? v.make ?? null) as any),
-      vehicle_model: (((l as any).vehicleModel ?? v.model ?? null) as any),
-      vehicle_year: (((l as any).vehicleYear ?? v.year ?? null) as any),
+    const lineRows = (lines ?? []).map((l: any, i: number) => {
+      const vi = Number((l as any).vehicleIndex);
+      const v = (vehicles ?? [])[Number.isFinite(vi) ? vi : -1] ?? {};
+      return {
+        quote_id: quoteId,
+        line_no: i + 1,
+        size: l.size,
+        quantity: l.qty,
+        vehicle_index: Number.isFinite(vi) ? vi : null,
+        vehicle_make: (l as any).vehicleMake ?? v.make ?? null,
+        vehicle_model: (l as any).vehicleModel ?? v.model ?? null,
+        vehicle_year: ((l as any).vehicleYear ?? v.year ?? null) as any,
+      };
     });
-    });
+
     const { data: insertedLines, error: lErr } = await supabaseAdmin
       .from("quote_lines")
       .insert(lineRows)
