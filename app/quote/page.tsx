@@ -192,7 +192,17 @@ export default function QuotePage() {
       return { size: l.size, qty: l.qty, vehicleMake: v.make, vehicleModel: v.model, vehicleYear: Number(v.year) };
     });
 
-    const res = await fetch("/api/quote", {
+    const res = await 
+    const linesWithVehicle = (lines ?? []).map((l: any) => {
+      const v = (vehicles ?? [])[Number(l.vehicleIndex)] ?? {};
+      return {
+        ...l,
+        vehicleMake: v.make ?? null,
+        vehicleModel: v.model ?? null,
+        vehicleYear: v.year ?? null
+      };
+    });
+fetch("/api/quote", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -658,7 +668,7 @@ export default function QuotePage() {
                       <div>
                         <div><b>Medida:</b> {ln.size} &nbsp; <b>Solicitado:</b> {ln.requestedQty}</div>
                         <div style={{ color: "#666", marginTop: 4 }}>
-                          <b>Vehículo:</b> {[ln.vehicleMake, ln.vehicleModel, ln.vehicleYear].filter(Boolean).join(" ")}
+                          <b>Vehículo:</b> {vehicleLabelFromLine(ln) || "—"}
                         </div>
                         {ln.notice ? <div style={{ color: "#b45309", marginTop: 6 }}><b>Nota:</b> {ln.notice}</div> : null}
                       </div>
