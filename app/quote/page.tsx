@@ -192,17 +192,12 @@ export default function QuotePage() {
       return { size: l.size, qty: l.qty, vehicleMake: v.make, vehicleModel: v.model, vehicleYear: Number(v.year) };
     });
 
-    const res = await 
     const linesWithVehicle = (lines ?? []).map((l: any) => {
-      const v = (vehicles ?? [])[Number(l.vehicleIndex)] ?? {};
-      return {
-        ...l,
-        vehicleMake: v.make ?? null,
-        vehicleModel: v.model ?? null,
-        vehicleYear: v.year ?? null
-      };
+      const v = (vehicles ?? [])[Number((l as any).vehicleIndex)] ?? {};
+      return { ...l, vehicleMake: v.make ?? null, vehicleModel: v.model ?? null, vehicleYear: v.year ?? null };
     });
-fetch("/api/quote", {
+
+    const res = await fetch("/api/quote", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
