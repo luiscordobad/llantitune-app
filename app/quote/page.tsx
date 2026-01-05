@@ -195,16 +195,38 @@ export default function QuotePage() {
       .map((l) => ({ ...l, size: l.size.trim(), qty: Number(l.qty) || 0 }))
       .filter((l) => l.size && l.qty >= 1);
 
+    const vehiclesPayload = (vehicles as any[]).map((v: any) => ({
+      make: v?.make ?? null,
+      model: v?.model ?? null,
+      year: (() => {
+        const n = Number(v?.year);
+        return Number.isFinite(n) ? Math.trunc(n) : null;
+      })(),
+    }));
+
     const payloadLines = cleanLines.map((l: any) => {
-      const vi = Number((l as any).vehicleIndex ?? (l as any).vehicle_index);
-      const v = (vehicles as any[])[Number.isFinite(vi) ? vi : -1] ?? {};
+      const viRaw = (l as any).vehicleIndex ?? (l as any).vehicle_index;
+      const viNum = Number(viRaw);
+      const vi = Number.isFinite(viNum) ? Math.trunc(viNum) : 0;
+      const v = vehiclesPayload[vi] ?? { make: null, model: null, year: null };
+
+      const yearNum = (() => {
+        const y = (l as any).vehicleYear ?? (l as any).vehicle_year ?? v.year ?? null;
+        const n = Number(y);
+        return Number.isFinite(n) ? Math.trunc(n) : null;
+      })();
+
       return {
         size: l.size,
         qty: Number(l.qty) || 0,
-        vehicleIndex: Number.isFinite(vi) ? vi : null,
-        vehicleMake: (l as any).vehicleMake ?? v.make ?? null,
-        vehicleModel: (l as any).vehicleModel ?? v.model ?? null,
-        vehicleYear: ((l as any).vehicleYear ?? v.year ?? null) as any,
+
+        // ensure not null so backend can map
+        vehicleIndex: vi,
+
+        // redundant on purpose: protects against UI/BE mismatches
+        vehicleMake: (l as any).vehicleMake ?? (l as any).vehicle_make ?? v.make ?? null,
+        vehicleModel: (l as any).vehicleModel ?? (l as any).vehicle_model ?? v.model ?? null,
+        vehicleYear: yearNum,
       };
     });
 
@@ -213,7 +235,7 @@ export default function QuotePage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         lines: payloadLines,
-        vehicles,
+        vehicles: vehiclesPayload,
 
         markup, install, extras, minStock,
         customerName, customerEmail, customerPhone,
