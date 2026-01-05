@@ -252,8 +252,15 @@ export default function QuotePage() {
     const qn = draft?.quoteNumber ?? "BORRADOR";
     const linesTxt: string[] = [];
     for (const ln of draft?.lines ?? []) {
-      const vehicle = [ln.vehicleMake, ln.vehicleModel, ln.vehicleYear].filter(Boolean).join(" ");
-      linesTxt.push(`• ${ln.size} (solicitado x${ln.requestedQty}) — ${vehicle}`);
+      const make = (ln as any).vehicleMake ?? (ln as any).vehicle_make ?? '';
+      const model = (ln as any).vehicleModel ?? (ln as any).vehicle_model ?? '';
+      const year = (ln as any).vehicleYear ?? (ln as any).vehicle_year ?? '';
+      const vehicle = [make, model, year].filter(Boolean).join(" ");
+      if (vehicle) {
+        linesTxt.push(`• Vehículo: ${vehicle} — Medida: ${ln.size} (x${ln.requestedQty})`);
+      } else {
+        linesTxt.push(`• Medida: ${ln.size} (x${ln.requestedQty})`);
+      }
       const opts = (ln.options ?? []).filter((o: any) => o.included !== false);
       for (const o of opts) {
         linesTxt.push(`  - ${o.tierLabel}: ${o.brand} ${o.model} ${o.loadSpeed ?? ""} | ${fmtMoney(o.priceEach)} c/u | Total: ${fmtMoney(o.totalTires)}`);
