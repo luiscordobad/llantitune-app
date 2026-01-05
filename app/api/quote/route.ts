@@ -148,7 +148,11 @@ export async function POST(req: Request) {
       line_no: i + 1,
       size: l.size,
       quantity: l.qty,
-      vehicle_make: (l as any).vehicleMake ?? vehicleMake ?? null,
+            vehicle_index: (l.vehicleIndex ?? null) as any,
+      vehicle_make: (l.vehicleMake ?? null) as any,
+      vehicle_model: (l.vehicleModel ?? null) as any,
+      vehicle_year: (l.vehicleYear ?? null) as any,
+vehicle_make: (l as any).vehicleMake ?? vehicleMake ?? null,
       vehicle_model: (l as any).vehicleModel ?? vehicleModel ?? null,
       vehicle_year: ((l as any).vehicleYear ?? vehicleYear ?? null) as any
     }));
