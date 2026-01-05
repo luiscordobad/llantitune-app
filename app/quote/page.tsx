@@ -302,7 +302,9 @@ export default function QuotePage() {
     const d = await res.json();
     if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
     setStatus("✅ ENVIADA. Ya puedes mandarla por WhatsApp o correo.");
-    if (d.quote_number) setDraft((p: any) => ({ ...p, quoteNumber: d.quote_number }));
+    if (d.quoteNumber) setDraft((p: any) => ({ ...p, quoteNumber: d.quoteNumber }));
+    // also mark as sent in local state
+    setDraft((p: any) => ({ ...p, status: 'SENT' }));
   }
 
   function openWhatsapp() {
