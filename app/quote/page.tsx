@@ -2,6 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+
+function vehicleLabelFromLine(ln: any) {
+  const make = (ln as any).vehicleMake ?? (ln as any).vehicle_make ?? "";
+  const model = (ln as any).vehicleModel ?? (ln as any).vehicle_model ?? "";
+  const year = (ln as any).vehicleYear ?? (ln as any).vehicle_year ?? "";
+  return [make, model, year].filter(Boolean).join(" ");
+}
+
 type Vehicle = { make: string; model: string; year: string };
 type Line = { vehicleIndex: number; size: string; qty: number };
 
