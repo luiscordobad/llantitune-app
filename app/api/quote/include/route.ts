@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createSupabaseAdminClient } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export async function POST(req: Request) {
   try {
@@ -7,8 +7,6 @@ export async function POST(req: Request) {
     const quoteItemId = body.quoteItemId as string;
     const included = !!body.included;
     if (!quoteItemId) return NextResponse.json({ error: "quoteItemId required" }, { status: 400 });
-
-    const supabaseAdmin = createSupabaseAdminClient();
 
     const { error } = await supabaseAdmin
       .from("quote_items")
