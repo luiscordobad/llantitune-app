@@ -262,7 +262,7 @@ export default function QuotePage() {
     }
 
     const header = [
-      "Llantitune ✅ Cotización",
+      "Llantitune Cotización",
       `No. ${qn}`,
       `Cliente: ${customerName}`,
       `Tel: ${customerPhone}`,
@@ -317,6 +317,8 @@ export default function QuotePage() {
     const mailto = `mailto:${encodeURIComponent(customerEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     window.location.href = mailto;
   }
+
+  const isSent = !(String(draft?.quoteNumber ?? '').includes('BORRADOR'));
 
   const stepTitle = {
     1: "1) Datos del cliente (obligatorio)",
@@ -738,6 +740,13 @@ export default function QuotePage() {
                     Cliente: <b>{customerName}</b> — {customerPhone} — {customerEmail}
                   </div>
                 </div>
+
+              {!isSent ? (
+                <div style={{ marginTop: 10, color: "#b45309" }}>
+                  <b>Nota:</b> Aún es borrador. Pulsa <b>Enviar (genera folio)</b> para asignar el número de cotización y habilitar WhatsApp/Correo.
+                </div>
+              ) : null}
+
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <button type="button" onClick={downloadPDF}>Descargar PDF</button>
                   <button
@@ -766,9 +775,9 @@ export default function QuotePage() {
               </div>
 
               <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button type="button" onClick={() => navigator.clipboard.writeText(buildPreviewText())}>Copiar texto</button>
-                <button type="button" onClick={openWhatsapp}>Abrir WhatsApp</button>
-                <button type="button" onClick={prepareEmail}>Preparar correo</button>
+                <button type="button" onClick={() => navigator.clipboard.writeText(buildPreviewText())} disabled={!isSent} title={!isSent ? 'Primero pulsa Enviar para asignar folio' : ''}>Copiar texto</button>
+                <button type="button" onClick={openWhatsapp} disabled={!isSent} title={!isSent ? 'Primero pulsa Enviar para asignar folio' : ''}>Abrir WhatsApp</button>
+                <button type="button" onClick={prepareEmail} disabled={!isSent} title={!isSent ? 'Primero pulsa Enviar para asignar folio' : ''}>Preparar correo</button>
               </div>
 
               <div style={{ marginTop: 14 }}>
