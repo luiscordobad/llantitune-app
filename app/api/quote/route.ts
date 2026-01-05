@@ -77,10 +77,7 @@ export async function POST(req: Request) {
       ? (body as any).vehicles.map((v: any) => ({
           make: v?.make ?? v?.vehicleMake ?? null,
           model: v?.model ?? v?.vehicleModel ?? null,
-          year: (() => {
-            const n = Number(v?.year ?? v?.vehicleYear);
-            return Number.isFinite(n) ? Math.trunc(n) : null;
-          })(),
+          year: toIntOrNull(v?.year ?? v?.vehicleYear ?? null),
         }))
       : [];
 const defaults = await getSettingsDefaults();
@@ -99,27 +96,17 @@ const defaults = await getSettingsDefaults();
 
     const lines = linesIn
       .map((l: any) => {
-        const viRaw = (l as any).vehicleIndex ?? (l as any).vehicle_index;
-        const viNum = Number(viRaw);
-        const vi = Number.isFinite(viNum) ? Math.trunc(viNum) : null;
+        const size = normalizeSizeAny(l.size);
+        const qty = Math.max(1, Number(l.qty ?? 1));
 
-        const size = normalizeSizeAny((l as any).size);
-        const qty = Math.max(1, Number((l as any).qty ?? 1));
+        const viNum = Number((l as any).vehicleIndex ?? (l as any).vehicle_index);
+        const vehicleIndex = Number.isFinite(viNum) ? Math.trunc(viNum) : null;
 
-        const yearNum = (() => {
-          const y = (l as any).vehicleYear ?? (l as any).vehicle_year ?? null;
-          const n = Number(y);
-          return Number.isFinite(n) ? Math.trunc(n) : null;
-        })();
+        const vehicleMake = (l as any).vehicleMake ?? (l as any).vehicle_make ?? null;
+        const vehicleModel = (l as any).vehicleModel ?? (l as any).vehicle_model ?? null;
+        const vehicleYear = toIntOrNull((l as any).vehicleYear ?? (l as any).vehicle_year ?? null);
 
-        return {
-          size,
-          qty,
-          vehicleIndex: vi,
-          vehicleMake: (l as any).vehicleMake ?? (l as any).vehicle_make ?? null,
-          vehicleModel: (l as any).vehicleModel ?? (l as any).vehicle_model ?? null,
-          vehicleYear: yearNum,
-        };
+        return { size, qty, vehicleIndex, vehicleMake, vehicleModel, vehicleYear };
       })
       .filter((l: any) => !!l.size) as {
         size: string;
@@ -201,7 +188,7 @@ const defaults = await getSettingsDefaults();
     const { data: insertedLines, error: lErr } = await supabaseAdmin
       .from("quote_lines")
       .insert(lineRows)
-      .select("line_id, line_no, size, quantity, vehicle_index, vehicle_make, vehicle_model, vehicle_year");
+      .select("line_id, line_no, size, quantity, vehicle_make, vehicle_model, vehicle_year");
     if (lErr) throw lErr;
 
     const perLineResults: any[] = [];
@@ -319,18 +306,29 @@ const defaults = await getSettingsDefaults();
         lineNo: line.line_no,
         size,
         requestedQty,
-
-        vehicleIndex: (line as any).vehicle_index ?? null,
-        vehicleMake: (line as any).vehicle_make ?? null,
-        vehicleModel: (line as any).vehicle_model ?? null,
-        vehicleYear: (line as any).vehicle_year ?? null,
-
         options: tiered,
         anyLimited
       });
     }
 
-    const header =
+    
+    // --- Quote-level totals (services are per vehicle) ---
+    const vehicleSet = new Set<number>();
+    for (const ln of insertedLines ?? []) {
+      const vi = Number((ln as any).vehicle_index);
+      if (Number.isFinite(vi)) vehicleSet.add(vi);
+    }
+    const numVehicles = Math.max(1, vehicleSet.size || (vehicles?.length ?? 0) || 0);
+    const serviceTotal = (install + extras) * numVehicles;
+
+    // Estimate tires total as the cheapest option (rank 1) per line
+    const tiresTotalEstimate = (perLineResults ?? []).reduce((sum: number, lr: any) => {
+      const first = lr?.options?.[0];
+      return sum + Number(first?.totalWithServices ?? 0);
+    }, 0);
+
+    const grandTotal = tiresTotalEstimate + serviceTotal;
+const header =
 `Llantitune ✅ Cotización
 No. ${quoteNumber}
 ${customerName ? `Cliente: ${customerName}\n` : ""}${vehicle ? `Vehículo: ${vehicle}\n` : ""}
@@ -352,8 +350,7 @@ ${customerName ? `Cliente: ${customerName}\n` : ""}${vehicle ? `Vehículo: ${veh
   return `• ${lr.size} (solicitado x${lr.requestedQty}):\n${lines.join("\n")}${note ? "\n" + note : ""}`;
 }).join("\n\n");
 
-const whatsappText = header + "\n" + bodyText + "\n\nResponde con el número de opción (por medida) para apartarla.";
- + "\n" + bodyText + "\n\n¿Te aparto alguna opción?";
+const whatsappText = header + "\n" + bodyText + `\n\nTotal final (incluye instalación y extras): $${grandTotal.toFixed(2)}\n\n¿Te aparto alguna opción?`;
 
     const emailSubject = `Cotización Llantitune${quoteNumber ? ' – ' + quoteNumber : ''}`;
     const emailBody =
@@ -378,6 +375,8 @@ ${perLineResults.map((lr: any) => {
 
 ¿Con cuál opción te quedas para apartarla?
 
+Total final (incluye instalación y extras): $${grandTotal.toFixed(2)}
+
 Saludos,
 Llantitune`;
 
@@ -392,26 +391,10 @@ Llantitune`;
       whatsappText,
       emailSubject,
       emailBody,
-      internal: (() => {
-        const vis = new Set<number>();
-        for (const ln of insertedLines ?? []) {
-          const vi = Number((ln as any).vehicle_index);
-          if (Number.isFinite(vi)) vis.add(vi);
-        }
-        const numVehicles = Math.max(1, vis.size || (vehicles?.length ?? 0) || 0);
-
-        const serviceTotal = (install + extras) * numVehicles;
-
-        // estimate: sum the first option per line (cheapest after sorting)
-        const tiresTotalEstimate = (perLineResults ?? []).reduce((sum: number, ln: any) => {
-          const first = ln?.options?.[0];
-          return sum + Number(first?.totalTires ?? 0);
-        }, 0);
-
-        const grandTotalEstimate = tiresTotalEstimate + serviceTotal;
-
-        return { markup, install, extras, minStock, numVehicles, serviceTotal, tiresTotalEstimate, grandTotalEstimate };
-      })()
+      numVehicles,
+      serviceTotal,
+      grandTotal,
+      internal: { markup, install, extras, minStock, numVehicles, serviceTotal, grandTotal, tiresTotalEstimate }
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 });
