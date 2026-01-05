@@ -36,8 +36,44 @@ async function getSettingsDefaults(): Promise<SettingsDefaults> {
     .single();
 
   if (error) return {};
-  // Supabase types are often `any` unless you generated types; cast safely:
   return (data ?? {}) as SettingsDefaults;
+}
+
+type VehicleIn = { make?: string | null; model?: string | null; year?: any };
+
+async function findOrCreateCustomerId(params: {
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+}): Promise<string> {
+  const { name, phone, email } = params;
+
+  // If phone exists, try to reuse existing customer (avoids ux_customers_phone violation).
+  if (phone) {
+    const { data: existing, error: exErr } = await supabaseAdmin
+      .from("customers")
+      .select("customer_id")
+      .eq("phone", phone)
+      .limit(1);
+
+    if (exErr) throw exErr;
+    const id = existing?.[0]?.customer_id;
+    if (id) return id as string;
+  }
+
+  // Otherwise create a new customer row
+  const { data: created, error: cErr } = await supabaseAdmin
+    .from("customers")
+    .insert({
+      name,
+      phone,
+      email,
+    })
+    .select("customer_id")
+    .single();
+
+  if (cErr) throw cErr;
+  return created.customer_id as string;
 }
 
 export async function POST(req: Request) {
@@ -46,7 +82,7 @@ export async function POST(req: Request) {
 
     const defaults = await getSettingsDefaults();
 
-    // Internals
+    // Internals (Step 3)
     const markup = Number(body.markup ?? defaults?.default_markup_pct ?? 30);
     const install = Number(body.install ?? defaults?.default_install_each ?? 0); // per car
     const extras = Number(body.extras ?? defaults?.default_extras_each ?? 0);   // per car
@@ -62,13 +98,14 @@ export async function POST(req: Request) {
     const internalNotes = body.internalNotes ?? null;
 
     // vehicles[]
-    const vehicles = Array.isArray(body.vehicles)
-      ? body.vehicles.map((v: any) => ({
-          make: v?.make ?? v?.vehicleMake ?? null,
-          model: v?.model ?? v?.vehicleModel ?? null,
-          year: toIntOrNull(v?.year ?? v?.vehicleYear ?? null),
-        }))
-      : [];
+    const vehicles: { make: string | null; model: string | null; year: number | null }[] =
+      Array.isArray(body.vehicles)
+        ? (body.vehicles as VehicleIn[]).map((v: any) => ({
+            make: v?.make ?? v?.vehicleMake ?? null,
+            model: v?.model ?? v?.vehicleModel ?? null,
+            year: toIntOrNull(v?.year ?? v?.vehicleYear ?? null),
+          }))
+        : [];
 
     if (!vehicles.length) {
       return NextResponse.json({ error: "vehicles[] is required" }, { status: 400 });
@@ -80,7 +117,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "lines[] is required" }, { status: 400 });
     }
 
-    // CRITICAL: don't drop vehicle fields
+    // CRITICAL: don't drop vehicle fields during normalization
     const lines = linesIn
       .map((l: any, i: number) => {
         const size = normalizeSizeAny(l.size);
@@ -107,23 +144,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid sizes" }, { status: 400 });
     }
 
-    // Customer insert (simple). If you already have upsert, keep yours.
-    const { data: customer, error: cErr } = await supabaseAdmin
-      .from("customers")
-      .insert({
-        name: customerName,
-        phone: customerPhone,
-        email: customerEmail,
-      })
-      .select("customer_id")
-      .single();
-    if (cErr) throw cErr;
+    // Customer: find-or-create by unique phone (avoids duplicate key error)
+    const customerId = await findOrCreateCustomerId({
+      name: customerName,
+      phone: customerPhone,
+      email: customerEmail,
+    });
 
-    // Quote DRAFT (no folio yet)
+    // Quote DRAFT (folio assigned later in your "Send" step)
     const { data: q, error: qErr } = await supabaseAdmin
       .from("quotes")
       .insert({
-        customer_id: customer.customer_id,
+        customer_id: customerId,
         customer_name: customerName,
         customer_phone: customerPhone,
         customer_email: customerEmail,
@@ -141,6 +173,7 @@ export async function POST(req: Request) {
       })
       .select("quote_id, quote_no, created_at")
       .single();
+
     if (qErr) throw qErr;
 
     const quoteId = q.quote_id as string;
@@ -163,6 +196,7 @@ export async function POST(req: Request) {
         }))
       )
       .select("line_id, line_no, size, quantity, vehicle_index, vehicle_make, vehicle_model, vehicle_year");
+
     if (lErr) throw lErr;
 
     // Providers latest snapshot (offers table)
@@ -175,6 +209,7 @@ export async function POST(req: Request) {
         .eq("provider", p)
         .order("snapshot_date", { ascending: false })
         .limit(1);
+
       latest[p] = data?.[0]?.snapshot_date ?? null;
     }
 
@@ -254,6 +289,7 @@ export async function POST(req: Request) {
       const vi = Number(l.vehicle_index);
       if (Number.isFinite(vi)) vehicleSet.add(vi);
     });
+
     const numVehicles = Math.max(1, vehicleSet.size || vehicles.length || 0);
     const serviceTotal = (install + extras) * numVehicles;
 
@@ -265,7 +301,7 @@ export async function POST(req: Request) {
 
     const grandTotal = tiresTotalEstimate + serviceTotal;
 
-    // ===== Message (now includes services in the total) =====
+    // ===== Customer message (now includes services in total) =====
     const linesText = (perLineResults ?? [])
       .map((ln: any) => {
         const veh = [ln.vehicleMake, ln.vehicleModel, ln.vehicleYear].filter(Boolean).join(" ");
