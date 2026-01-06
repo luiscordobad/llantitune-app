@@ -6,11 +6,17 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function GET(
-  request: Request,
-  { params }: { params: any }
-) {
-  const quoteId = params.quoteId as string;
+export async function GET(request: Request) {
+  // 👇 obtenemos el ID desde la URL directamente
+  const url = new URL(request.url);
+  const quoteId = url.pathname.split("/").pop();
+
+  if (!quoteId) {
+    return NextResponse.json(
+      { error: "Missing quoteId" },
+      { status: 400 }
+    );
+  }
 
   let query = supabase.from("quotes").select("*");
 
