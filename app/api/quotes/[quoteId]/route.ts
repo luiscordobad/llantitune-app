@@ -1,16 +1,10 @@
 import { NextResponse } from "next/server";
 
-type RouteContext = {
-  params: {
-    quoteId: string;
-  };
-};
-
 export async function GET(
   request: Request,
-  context: RouteContext
+  { params }: { params: { quoteId: string } }
 ) {
-  const { quoteId } = context.params;
+  const { quoteId } = params;
 
   return NextResponse.json({
     id: quoteId,
