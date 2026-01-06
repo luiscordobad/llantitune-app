@@ -370,3 +370,66 @@ button,input,select,textarea{ font: inherit; }
 
 
 .lt-container{ max-width:1180px; margin:0 auto; padding: 18px; }
+
+/* Drawer (side panel) */
+.drawer{ position: fixed; inset: 0; z-index: 60; display: grid; grid-template-columns: 1fr; }
+.drawerBackdrop{ position: absolute; inset:0; background: rgba(15,23,42,0.35); }
+.drawerPanel{
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: min(920px, 96vw);
+  background: var(--card);
+  border-left: 1px solid var(--border);
+  box-shadow: 0 18px 60px rgba(15,23,42,0.25);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+.drawerHeader{
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  display:flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.drawerTitle{ font-weight: 900; letter-spacing: -0.02em; font-size: 16px; }
+.drawerSub{ color: var(--muted2); font-size: 12px; margin-top: 3px; }
+.drawerBody{ padding: 14px 16px; overflow: auto; }
+.drawerFooter{ padding: 12px 16px; border-top: 1px solid var(--border); background: rgba(15,23,42,0.02); }
+
+/* Quote option cards */
+.optionGrid{ display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+@media (min-width: 860px){ .optionGrid{ grid-template-columns: repeat(3, minmax(0,1fr)); } }
+
+.optionCard{
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px;
+  cursor: pointer;
+  transition: box-shadow .15s ease, transform .15s ease, border-color .15s ease;
+}
+.optionCard:hover{ box-shadow: 0 12px 26px rgba(15,23,42,0.10); transform: translateY(-1px); }
+.optionCard:disabled{ opacity: .65; cursor: not-allowed; transform:none; box-shadow:none; }
+.optionCardActive{ border-color: rgba(31,95,191,0.55); box-shadow: 0 12px 26px rgba(31,95,191,0.12); }
+
+.optionTop{ display:flex; align-items:flex-start; justify-content: space-between; gap: 10px; }
+.optionBrand{ font-weight: 900; letter-spacing: -0.01em; }
+.optionPrice{ font-weight: 900; }
+.optionMeta{ display:flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+.pill{
+  display:inline-flex;
+  align-items:center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: rgba(15,23,42,0.02);
+}
+.pillOk{ border-color: rgba(16,185,129,0.35); color: rgba(5,150,105,1); background: rgba(16,185,129,0.10); }

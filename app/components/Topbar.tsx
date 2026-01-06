@@ -61,14 +61,15 @@ export default function Topbar() {
     // NOTE: links respect the existing routes; we are not changing business logic.
     const dashboard = { href: "/", label: "Dashboard", meta: "KPIs" };
     const quote = { href: "/quote", label: "Cotizar", meta: "Paso a paso" };
-    const work = { href: "/work", label: "Órdenes", meta: "Taller" };
+    const workAdmin = { href: "/admin/orders", label: "Órdenes", meta: "Taller" };
+    const workMechanic = { href: "/work", label: "Órdenes", meta: "Taller" };
     const customers = { href: "/admin/customers", label: "Clientes", meta: "CRM" };
-    const reports = { href: "/admin/orders", label: "Reportes", meta: "Historial" };
+    const reports = { href: "/admin/reports", label: "Reportes", meta: "KPIs" };
     const admin = { href: "/admin", label: "Admin", meta: "Catálogos" };
 
-    if (role === "mechanic") return [work];
-    if (role === "admin") return [dashboard, quote, work, customers, reports, admin];
-    if (role === "staff") return [dashboard, quote, work, customers];
+    if (role === "mechanic") return [workMechanic];
+    if (role === "admin") return [dashboard, quote, workAdmin, customers, reports, admin];
+    if (role === "staff") return [dashboard, quote, workAdmin, customers];
     return [dashboard];
   }, [role]);
 

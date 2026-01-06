@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import PageHeader from "@/app/components/PageHeader";
 
-const ORDER_STATUSES = ["DRAFT","ORDERED","RECEIVED","INSTALLED","CLOSED"];
+const ORDER_STATUSES = ["PENDING","DRAFT","ORDERED","RECEIVED","INSTALLED","CLOSED"];
 
 export default function AdminOrders() {
+  const searchParams = useSearchParams();
   const [data, setData] = useState<any>(null);
   const [profiles, setProfiles] = useState<any[]>([]);
   const [status, setStatus] = useState("Cargando...");
@@ -40,6 +42,19 @@ export default function AdminOrders() {
     load();
     loadProfiles();
   }, []);
+
+  // Allow deep-linking to an order from other screens: /admin/orders?open=<order_id>
+  useEffect(() => {
+    if (!data) return;
+    const open = searchParams.get("open");
+    if (!open) return;
+    const target = String(open);
+    const exists = (data.orders ?? []).find((o: any) => String(o.order_id) === target);
+    if (exists) {
+      setSelectedOrderId(target);
+      setSelectedQuoteId(String(exists.quote_id ?? ""));
+    }
+  }, [data, searchParams]);
 
   useEffect(() => {
     if (selectedOrderId) loadTimeline("ORDER", selectedOrderId);

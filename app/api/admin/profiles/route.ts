@@ -10,7 +10,8 @@ export async function GET() {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { data: me } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-    if (me?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const role = String((me as any)?.role ?? "").toLowerCase();
+    if (role !== "admin" && role !== "staff") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { data, error } = await supabase
       .from("profiles")

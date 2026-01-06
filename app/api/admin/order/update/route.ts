@@ -13,9 +13,10 @@ export async function POST(req: Request) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    // Only admin can use this endpoint
+    // Only admin/staff can use this endpoint
     const { data: me } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-    if (me?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const role = String((me as any)?.role ?? "").toLowerCase();
+    if (role !== "admin" && role !== "staff") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { data: before, error: bErr } = await supabase.from("orders").select("status").eq("order_id", orderId).single();
     if (bErr) throw bErr;

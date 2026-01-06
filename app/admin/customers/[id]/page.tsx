@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import QuoteManagePanel from "@/app/components/QuoteManagePanel";
 
 export default function CustomerDetail() {
   const params = useParams<{ id: string }>();
@@ -9,6 +10,7 @@ export default function CustomerDetail() {
 
   const [data, setData] = useState<any>(null);
   const [status, setStatus] = useState("Cargando...");
+  const [manageQuoteId, setManageQuoteId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -53,7 +55,14 @@ export default function CustomerDetail() {
                 <td style={{ padding: 8, borderBottom: "1px solid #eee", textAlign: "right" }}>
                   <a href={`/quote?requote=${q.quote_id}`}>Re-cotizar →</a>
                   {"  "}
-                  <a href={`/admin/orders?quoteId=${q.quote_id}`}>Pedido interno →</a>
+                  <button
+                    className="btn btnSmall"
+                    type="button"
+                    onClick={() => setManageQuoteId(String(q.quote_id))}
+                    style={{ marginLeft: 8 }}
+                  >
+                    Gestionar →
+                  </button>
                 </td>
               </tr>
             ))}
@@ -62,6 +71,12 @@ export default function CustomerDetail() {
       ) : (
         <div style={{ color: "#666" }}>Sin cotizaciones todavía.</div>
       )}
+
+      <QuoteManagePanel
+        open={!!manageQuoteId}
+        quoteId={manageQuoteId}
+        onClose={() => setManageQuoteId(null)}
+      />
     </div>
   );
 }
