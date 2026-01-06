@@ -1,73 +1,37 @@
-
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { createClient } from "@supabase/supabase-js";
 
-export const runtime = "nodejs";
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
-export async function GET(_req: Request, ctx: any) {
-  try {
-    const rawId = String(ctx?.params?.quoteId || "").trim();
-    if (!rawId) {
-      return NextResponse.json({ error: "Missing quoteId" }, { status: 400 });
-    }
+export async function GET(
+  request: Request,
+  context: { params: { quoteId: string } }
+) {
+  const quoteId = context.params.quoteId;
 
-    // 1) Try by UUID
-    let quote = null;
-    let quoteId = rawId;
+  let query = supabase.from("quotes").select("*");
 
-    const byUuid = await supabaseAdmin
-      .from("quotes")
-      .select("*")
-      .eq("quote_id", rawId)
-      .maybeSingle();
+  // Detectar UUID vs folio
+  if (quoteId.includes("-")) {
+    query = query.eq("id", quoteId);
+  } else {
+    query = query.eq("folio", quoteId);
+  }
 
-    if (byUuid.data) {
-      quote = byUuid.data;
-      quoteId = byUuid.data.quote_id;
-    }
+  const { data, error } = await query.maybeSingle();
 
-    // 2) Fallback by quote_number / quote_no
-    if (!quote) {
-      const byNumber = await supabaseAdmin
-        .from("quotes")
-        .select("*")
-        .or(`quote_number.eq.${rawId},quote_no.eq.${rawId}`)
-        .maybeSingle();
-
-      if (byNumber.data) {
-        quote = byNumber.data;
-        quoteId = byNumber.data.quote_id;
-      }
-    }
-
-    if (!quote) {
-      return NextResponse.json(
-        { error: "Quote not found", id: rawId },
-        { status: 404 }
-      );
-    }
-
-    const { data: lines } = await supabaseAdmin
-      .from("quote_lines")
-      .select("*")
-      .eq("quote_id", quoteId)
-      .order("line_no", { ascending: true });
-
-    const { data: items } = await supabaseAdmin
-      .from("quote_items")
-      .select("*")
-      .eq("quote_id", quoteId)
-      .order("rank", { ascending: true });
-
-    return NextResponse.json({
-      quote,
-      lines: lines ?? [],
-      items: items ?? [],
-    });
-  } catch (e: any) {
+  if (error || !data) {
     return NextResponse.json(
-      { error: e?.message ?? String(e) },
-      { status: 500 }
+      {
+        error: "Quote not found",
+        quoteId,
+      },
+      { status: 404 }
     );
   }
+
+  return NextResponse.json(data);
 }
