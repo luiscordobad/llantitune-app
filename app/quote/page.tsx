@@ -315,7 +315,8 @@ export default function QuotePage() {
       }
       const opts = (ln.options ?? []).filter((o: any) => o.included !== false);
       for (const o of opts) {
-        linesTxt.push(`  - ${o.tierLabel}: ${o.brand} ${o.model} ${o.loadSpeed ?? ""} | ${fmtMoney(o.priceEach)} c/u | Total: ${fmtMoney(o.totalTires)}`);
+        const tier = (o as any).tierLabel ?? (o as any).tier ?? (o as any).gama ?? (o as any).tier_name ?? '—';
+        linesTxt.push(`  - ${tier}: ${o.brand} ${o.model} ${o.loadSpeed ?? ""} | ${fmtMoney(o.priceEach)} c/u | Total: ${fmtMoney(o.totalTires)}`);
       }
       linesTxt.push("");
     }
@@ -332,9 +333,30 @@ export default function QuotePage() {
       "",
     ].filter(Boolean);
 
+
+    // Totals (include services)
+    const internal = (draft as any)?.internal ?? (draft as any) ?? {};
+    const numVehicles = Number((internal as any).numVehicles ?? (draft as any)?.numVehicles ?? vehicles.length ?? 1) || 1;
+    const serviceTotal = Number((internal as any).serviceTotal ?? (draft as any)?.serviceTotal ?? ((install + extras) * numVehicles)) || 0;
+
+    // Tires total estimate: first included option per line (or first option)
+    const tiresTotalEstimate = (draft?.lines ?? []).reduce((sum: number, ln: any) => {
+      const opts = (ln.options ?? []).filter((o: any) => o.included !== false);
+      const first = opts[0] ?? (ln.options ?? [])[0];
+      return sum + Number(first?.totalTires ?? 0);
+    }, 0);
+
+    const grandTotal = Number((internal as any).grandTotal ?? (draft as any)?.grandTotal ?? (tiresTotalEstimate + serviceTotal)) || 0;
+
+    const totalsBlock = [
+      "",
+      serviceTotal > 0 ? `Servicios (instalación + extras): ${fmtMoney(serviceTotal)}` : null,
+      `Total estimado: ${fmtMoney(grandTotal)}`,
+    ].filter(Boolean) as string[];
+
     const footer = ["", msgOutro].filter(Boolean);
 
-    return [...header, ...linesTxt, ...footer].join("\n");
+    return [...header, ...linesTxt, ...totalsBlock, ...footer].join("\n");
   }
 
   async function downloadPDF() {

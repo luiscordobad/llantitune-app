@@ -4,221 +4,187 @@ import { normalizeSizeAny } from "@/lib/normalize";
 
 export const runtime = "nodejs";
 
-/* -------------------- helpers -------------------- */
-function cleanPhone(v: any) {
-  return (v ?? "").toString().replace(/\D/g, "");
-}
-function lower(v: any) {
-  return (v ?? "").toString().trim().toLowerCase();
-}
-function toIntOrNull(v: any): number | null {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.trunc(n) : null;
-}
-function money(n: any) {
-  const x = Number(n ?? 0);
-  return Number.isFinite(x) ? x : 0;
-}
-/* ------------------------------------------------- */
-
-type SettingsDefaults = {
-  default_markup_pct?: number | null;
-  default_install_each?: number | null;
-  default_extras_each?: number | null;
-  default_min_stock?: number | null;
-};
-
-async function getSettingsDefaults(): Promise<SettingsDefaults> {
-  // If your table/fields differ, adjust select(...) accordingly.
-  const { data, error } = await supabaseAdmin
-    .from("settings")
-    .select("default_markup_pct, default_install_each, default_extras_each, default_min_stock")
-    .single();
-
-  if (error) return {};
-  return (data ?? {}) as SettingsDefaults;
+type LineIn = { size: string; qty: number; vehicleIndex?: number | null; vehicleMake?: string | null; vehicleModel?: string | null; vehicleYear?: number | null };
+function digitsOnly(s: string) { return (s ?? "").replace(/\D/g, ""); }
+function lower(s: string) { return (s ?? "").trim().toLowerCase(); }
+function fmtQuoteNumber(quoteNo: number, createdAt?: string) {
+  const d = createdAt ? new Date(createdAt) : new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `LT-${y}${m}${dd}-${String(quoteNo).padStart(5, "0")}`;
 }
 
-type VehicleIn = { make?: string | null; model?: string | null; year?: any };
+async function getSettingsDefaults() {
+  const { data, error } = await supabaseAdmin.from("settings").select("key, value_numeric");
+  if (error) throw error;
+  const map: any = {};
+  for (const r of data ?? []) map[r.key] = Number(r.value_numeric ?? 0);
+  return map;
+}
 
-async function findOrCreateCustomerId(params: {
-  name: string | null;
-  phone: string | null;
-  email: string | null;
-}): Promise<string> {
-  const { name, phone, email } = params;
+async function findOrCreateCustomer(name?: string, phone?: string, email?: string) {
+  const p = digitsOnly(phone ?? "");
+  const e = lower(email ?? "");
+  const n = (name ?? "").trim() || null;
 
-  // If phone exists, try to reuse existing customer (avoids ux_customers_phone violation).
-  if (phone) {
-    const { data: existing, error: exErr } = await supabaseAdmin
-      .from("customers")
-      .select("customer_id")
-      .eq("phone", phone)
-      .limit(1);
-
-    if (exErr) throw exErr;
-    const id = existing?.[0]?.customer_id;
-    if (id) return id as string;
+  if (p) {
+    const { data, error } = await supabaseAdmin.from("customers").select("*").eq("phone", p).limit(1);
+    if (error) throw error;
+    if (data?.[0]) return data[0].customer_id as string;
   }
+  if (e) {
+    const { data, error } = await supabaseAdmin.from("customers").select("*").eq("email", e).limit(1);
+    if (error) throw error;
+    if (data?.[0]) return data[0].customer_id as string;
+  }
+  if (!n && !p && !e) return null;
 
-  // Otherwise create a new customer row
   const { data: created, error: cErr } = await supabaseAdmin
     .from("customers")
-    .insert({
-      name,
-      phone,
-      email,
-    })
+    .insert({ name: n, phone: p || null, email: e || null })
     .select("customer_id")
     .single();
-
   if (cErr) throw cErr;
+
   return created.customer_id as string;
+}
+
+function pickBuckets(options: any[]) {
+  if (!options.length) return [];
+  const econ = options[0];
+  const prem = options[options.length - 1];
+  const mid = options[Math.floor(options.length / 2)];
+  // de-dup by quote_item_id
+  const seen = new Set<string>();
+  const out: any[] = [];
+  for (const o of [econ, mid, prem]) {
+    const id = String(o.quoteItemId ?? o.quote_item_id ?? "");
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      out.push(o);
+    }
+  }
+  return out;
 }
 
 export async function POST(req: Request) {
   try {
-    const body: any = await req.json();
+    const body = await req.json();
+    
+    const vehicles = (body as any).vehicles ?? [];
+const defaults = await getSettingsDefaults();
 
-    const defaults = await getSettingsDefaults();
+    const vehicleMake = body.vehicleMake ?? null;
+    const vehicleModel = body.vehicleModel ?? null;
+    const vehicleYear = body.vehicleYear ?? null;
 
-    // Internals (Step 3)
-    const markup = Number(body.markup ?? defaults?.default_markup_pct ?? 30);
-    const install = Number(body.install ?? defaults?.default_install_each ?? 0); // per car
-    const extras = Number(body.extras ?? defaults?.default_extras_each ?? 0);   // per car
-    const minStock = Number(body.minStock ?? defaults?.default_min_stock ?? 0);
+    const markup = Number(body.markup ?? defaults.default_markup_pct ?? 30);
+    const install = Number(body.install ?? defaults.default_install_each ?? 1000);
+    const extras = Number(body.extras ?? defaults.default_extras_each ?? 1000);
+    const minStock = Number(body.minStock ?? defaults.default_min_stock ?? 8);
 
-    // Customer
-    const customerName = body.customerName ?? null;
-    const customerPhone = cleanPhone(body.customerPhone ?? "") || null;
-    const customerEmail = lower(body.customerEmail ?? "") || null;
+    const linesIn: LineIn[] = Array.isArray(body.lines) ? body.lines : [];
+    if (!linesIn.length) return NextResponse.json({ error: "Missing lines" }, { status: 400 });
 
-    const depositAmount = body.depositAmount ?? null;
-    const promisedAt = body.promisedAt ?? null;
-    const internalNotes = body.internalNotes ?? null;
-
-    // vehicles[]
-    const vehicles: { make: string | null; model: string | null; year: number | null }[] =
-      Array.isArray(body.vehicles)
-        ? (body.vehicles as VehicleIn[]).map((v: any) => ({
-            make: v?.make ?? v?.vehicleMake ?? null,
-            model: v?.model ?? v?.vehicleModel ?? null,
-            year: toIntOrNull(v?.year ?? v?.vehicleYear ?? null),
-          }))
-        : [];
-
-    if (!vehicles.length) {
-      return NextResponse.json({ error: "vehicles[] is required" }, { status: 400 });
-    }
-
-    // lines[]
-    const linesIn = Array.isArray(body.lines) ? body.lines : [];
-    if (!linesIn.length) {
-      return NextResponse.json({ error: "lines[] is required" }, { status: 400 });
-    }
-
-    // CRITICAL: don't drop vehicle fields during normalization
     const lines = linesIn
-      .map((l: any, i: number) => {
-        const size = normalizeSizeAny(l.size);
-        const qty = Math.max(1, Number(l.qty ?? 1));
+  .map((l: any) => {
+    const viNum = Number(l.vehicleIndex ?? l.vehicle_index);
+    const vehicleIndex = Number.isFinite(viNum) ? Math.trunc(viNum) : null;
+    return {
+      size: normalizeSizeAny(l.size),
+      qty: Math.max(1, Number(l.qty ?? 1)),
+      vehicleIndex,
+      vehicleMake: (l as any).vehicleMake ?? (l as any).vehicle_make ?? null,
+      vehicleModel: (l as any).vehicleModel ?? (l as any).vehicle_model ?? null,
+      vehicleYear: Number.isFinite(Number((l as any).vehicleYear ?? (l as any).vehicle_year))
+        ? Math.trunc(Number((l as any).vehicleYear ?? (l as any).vehicle_year))
+        : null,
+    } as LineIn;
+  })
+  .filter(l => !!l.size) as LineIn[];
 
-        const viNum = Number(l.vehicleIndex ?? l.vehicle_index);
-        const vehicleIndex = Number.isFinite(viNum) ? Math.trunc(viNum) : null;
 
-        const v = vehicleIndex !== null ? vehicles[vehicleIndex] : null;
+    if (!lines.length) return NextResponse.json({ error: "Invalid sizes" }, { status: 400 });
 
-        return {
-          line_no: i + 1,
-          size,
-          quantity: qty,
-          vehicle_index: vehicleIndex,
-          vehicle_make: l.vehicleMake ?? l.vehicle_make ?? v?.make ?? null,
-          vehicle_model: l.vehicleModel ?? l.vehicle_model ?? v?.model ?? null,
-          vehicle_year: toIntOrNull(l.vehicleYear ?? l.vehicle_year ?? v?.year ?? null),
-        };
-      })
-      .filter((x: any) => !!x.size);
+    const customerName = body.customerName ?? null;
+    const customerPhone = digitsOnly(body.customerPhone ?? "") || null;
+    const customerEmail = lower(body.customerEmail ?? "") || null;
+    const vehicle = body.vehicle ?? null;
 
-    if (!lines.length) {
-      return NextResponse.json({ error: "Invalid sizes" }, { status: 400 });
+    const customerId = await findOrCreateCustomer(customerName ?? undefined, customerPhone ?? undefined, customerEmail ?? undefined);
+
+    // Latest snapshot per provider
+    const providers = ["Prodynamics", "Cotizador", "INV"];
+    const latest: Record<string, string | null> = {};
+
+    for (const p of providers) {
+      const { data, error } = await supabaseAdmin
+        .from("offers")
+        .select("snapshot_date")
+        .eq("provider", p)
+        .order("snapshot_date", { ascending: false })
+        .limit(1);
+      if (error) throw error;
+      latest[p] = data?.[0]?.snapshot_date ?? null;
     }
 
-    // Customer: find-or-create by unique phone (avoids duplicate key error)
-    const customerId = await findOrCreateCustomerId({
-      name: customerName,
-      phone: customerPhone,
-      email: customerEmail,
-    });
-
-    // Quote DRAFT (folio assigned later in your "Send" step)
+    // Create quote header
     const { data: q, error: qErr } = await supabaseAdmin
       .from("quotes")
       .insert({
         customer_id: customerId,
         customer_name: customerName,
         customer_phone: customerPhone,
-        customer_email: customerEmail,
-
+        vehicle_text: vehicle,
+        vehicle_make: vehicleMake,
+        vehicle_model: vehicleModel,
+        vehicle_year: vehicleYear,
+        size: null,
+        quantity: 1,
+        urgency: null,
+        preference: null,
         markup_pct: markup,
         install_each: install,
         extras_each: extras,
-        min_stock: minStock,
-
-        deposit_amount: depositAmount,
-        promised_at: promisedAt,
-        internal_notes: internalNotes,
-
-        status: "DRAFT",
+        notes: null
       })
       .select("quote_id, quote_no, created_at")
       .single();
-
     if (qErr) throw qErr;
 
     const quoteId = q.quote_id as string;
-    const quoteNo = q.quote_no ?? null;
-    const quoteNumber = quoteNo ? `LT-${quoteNo}` : "BORRADOR (sin folio)";
+    const quoteNo = Number((q as any).quote_no ?? 0);
+    const quoteNumber: string | null = null; // folio se asigna al enviar (status SENT)
 
-    // Insert quote_lines (vehicle_* FIX)
+    // Insert quote_lines
+    const lineRows = (lines ?? []).map((l: any, i: number) => {
+      const vi = Number((l as any).vehicleIndex);
+      const v = (vehicles ?? [])[Number.isFinite(vi) ? vi : -1] ?? {};
+      return {
+        quote_id: quoteId,
+        line_no: i + 1,
+        size: l.size,
+        quantity: l.qty,
+        vehicle_index: Number.isFinite(vi) ? vi : null,
+        vehicle_make: (l as any).vehicleMake ?? v.make ?? null,
+        vehicle_model: (l as any).vehicleModel ?? v.model ?? null,
+        vehicle_year: ((l as any).vehicleYear ?? v.year ?? null) as any,
+      };
+    });
+
     const { data: insertedLines, error: lErr } = await supabaseAdmin
       .from("quote_lines")
-      .insert(
-        lines.map((l: any) => ({
-          quote_id: quoteId,
-          line_no: l.line_no,
-          size: l.size,
-          quantity: l.quantity,
-          vehicle_index: l.vehicle_index,
-          vehicle_make: l.vehicle_make,
-          vehicle_model: l.vehicle_model,
-          vehicle_year: l.vehicle_year,
-        }))
-      )
-      .select("line_id, line_no, size, quantity, vehicle_index, vehicle_make, vehicle_model, vehicle_year");
-
+      .insert(lineRows)
+      .select("line_id, line_no, size, quantity, vehicle_make, vehicle_model, vehicle_year");
     if (lErr) throw lErr;
 
-    // Providers latest snapshot (offers table)
-    const providers = ["Prodynamics", "Cotizador", "INV"];
-    const latest: Record<string, string | null> = {};
-    for (const p of providers) {
-      const { data } = await supabaseAdmin
-        .from("offers")
-        .select("snapshot_date")
-        .eq("provider", p)
-        .order("snapshot_date", { ascending: false })
-        .limit(1);
-
-      latest[p] = data?.[0]?.snapshot_date ?? null;
-    }
-
-    // Build options per line (for UI)
     const perLineResults: any[] = [];
     let hasAnyOptions = false;
 
     for (const line of insertedLines ?? []) {
       const size = line.size as string;
+      const lineVehicle = [line.vehicle_make, line.vehicle_model, line.vehicle_year].filter(Boolean).join(' ');
       const requestedQty = Number(line.quantity);
 
       const all: any[] = [];
@@ -238,20 +204,25 @@ export async function POST(req: Request) {
         all.push(...(data ?? []));
       }
 
-      all.sort((a, b) => money(a.cost) - money(b.cost));
+      all.sort((a, b) => Number(a.cost ?? 0) - Number(b.cost ?? 0));
 
       const options = all.slice(0, 60).map((x: any, idx: number) => {
         const stock = Number(x.stock ?? 0);
         const quotedQty = Math.max(0, Math.min(requestedQty, stock || 0));
-        const cost = money(x.cost);
+        const limited = quotedQty < requestedQty;
+
+        const cost = Number(x.cost ?? 0);
         const priceEach = Math.round(cost * (1 + markup / 100));
+
         const totalTires = priceEach * quotedQty;
+        const totalServices = 0; // services are per-vehicle (handled at quote level)
+        const total = totalTires + totalServices;
 
         return {
           rank: idx + 1,
           provider: x.provider,
           sku: x.sku,
-          tireId: x.tire_id ?? null,
+          tireId: x.tire_id,
           brand: x.brand,
           model: x.model,
           loadSpeed: x.load_speed,
@@ -259,104 +230,159 @@ export async function POST(req: Request) {
           stock,
           requestedQty,
           quotedQty,
+          limited,
           cost,
           priceEach,
           totalTires,
-          included: true,
+          totalWithServices: total
         };
-      });
+      }).filter(o => o.quotedQty > 0); // never offer 0
 
       if (options.length) hasAnyOptions = true;
+
+      // Persist quote_items (top 30 per line)
+      if (options.length) {
+        const items = options.slice(0, 30).map((o: any) => ({
+          quote_id: quoteId,
+          line_id: line.line_id,
+          rank: o.rank,
+          provider: o.provider,
+          sku: o.sku,
+          tire_id: o.tireId,
+          brand: o.brand,
+          model: o.model,
+          load_speed: o.loadSpeed,
+          size: o.size,
+          stock: o.stock,
+          cost: o.cost,
+          price_each: o.priceEach,
+          included: true,
+          total_tires: o.totalTires,
+          total_with_services: o.totalWithServices
+        }));
+        const { data: inserted, error: iErr } = await supabaseAdmin.from("quote_items").insert(items).select("quote_item_id, line_id, rank");
+        if (iErr) throw iErr;
+
+        // attach quoteItemId back for UI bucket selection (match by rank)
+        const mapByRank: Record<number, string> = {};
+        for (const it of inserted ?? []) mapByRank[Number(it.rank)] = it.quote_item_id as string;
+        for (const o of options as any[]) (o as any).quoteItemId = mapByRank[(o as any).rank] ?? null;
+      }
+
+      // Tier labeling (Económica / Media / Premium)
+      const nOpt = options.length;
+      const tiered = (options as any[]).map((o: any, i: number) => {
+        const p = nOpt <= 1 ? 0 : i / (nOpt - 1);
+        const tierLabel = p <= 0.34 ? "Económica" : (p <= 0.67 ? "Media" : "Premium");
+        return { ...o, tierLabel };
+      });
+
+      // Warning if some options limited
+
+      const vehicleSet2 = new Set<number>();
+      for (const ln of insertedLines ?? []) {
+        const vi = Number((ln as any).vehicle_index);
+        if (!Number.isNaN(vi) && vi !== null) vehicleSet2.add(vi);
+      }
+      const numVehicles = Math.max(1, vehicleSet2.size || 0);
+      const serviceTotal = (install + extras) * numVehicles;
+      
+      const anyLimited = tiered.some((o: any) => o.limited);
 
       perLineResults.push({
         lineId: line.line_id,
         lineNo: line.line_no,
         size,
         requestedQty,
-
-        vehicleIndex: line.vehicle_index,
-        vehicleMake: line.vehicle_make,
-        vehicleModel: line.vehicle_model,
-        vehicleYear: line.vehicle_year,
-
-        options,
+        options: tiered,
+        anyLimited
       });
     }
 
-    // ===== Services per car + FINAL total to send =====
+    const header =
+`Llantitune ✅ Cotización
+No. ${quoteNumber}
+${customerName ? `Cliente: ${customerName}\n` : ""}${vehicle ? `Vehículo: ${vehicle}\n` : ""}
+`;
+
+    const bodyText = perLineResults.map((lr: any) => {
+  const opts = (lr.options ?? []);
+  if (!opts.length) return `• ${lr.size} (solicitado x${lr.requestedQty}): Sin opciones con stock suficiente`;
+
+  const lines = opts.map((o: any, i: number) => {
+    const qtyText = o.limited ? ` (Disponible x${o.quotedQty})` : "";
+    return `  #${i + 1} [${o.tier}] ${o.brand} | ${o.loadSpeed ?? ""} | $${o.priceEach} c/u | Total: $${o.totalWithServices}${qtyText}`;
+  });
+
+  const note = opts.some((o: any) => o.limited)
+    ? `  ⚠️ Nota: Algunas opciones tienen stock limitado para la cantidad solicitada hoy.`
+    : "";
+
+  return `• ${lr.size} (solicitado x${lr.requestedQty}):\n${lines.join("\n")}${note ? "\n" + note : ""}`;
+}).join("\n\n");
+
+    // ===== Services per car + totals =====
     const vehicleSet = new Set<number>();
     (insertedLines ?? []).forEach((l: any) => {
       const vi = Number(l.vehicle_index);
       if (Number.isFinite(vi)) vehicleSet.add(vi);
     });
-
-    const numVehicles = Math.max(1, vehicleSet.size || vehicles.length || 0);
+    const numVehicles = Math.max(1, vehicleSet.size || (vehicles?.length ?? 0) || 0);
     const serviceTotal = (install + extras) * numVehicles;
 
-    // Tires total estimate = first option per line
-    const tiresTotalEstimate = (perLineResults ?? []).reduce((sum: number, ln: any) => {
-      const first = ln?.options?.[0];
-      return sum + money(first?.totalTires);
+    // Tires total estimate = first option per size (cheapest)
+    const tiresTotalEstimate = (perLineResults ?? []).reduce((sum: number, lr: any) => {
+      const first = lr?.options?.[0];
+      return sum + Number(first?.totalTires ?? 0);
     }, 0);
 
     const grandTotal = tiresTotalEstimate + serviceTotal;
 
-    // ===== Customer message (now includes services in total) =====
-    const linesText = (perLineResults ?? [])
-      .map((ln: any) => {
-        const veh = [ln.vehicleMake, ln.vehicleModel, ln.vehicleYear].filter(Boolean).join(" ");
-        const first = ln?.options?.[0];
-        if (!first) return `🚗 ${veh}\nMedida ${ln.size} (${ln.requestedQty}) — Sin disponibilidad`;
+    const whatsappText =
+      header +
+      "\n" +
+      bodyText +
+      `\n\nTotal final: $${grandTotal.toFixed(2)}\n\n¿Te aparto alguna opción?`;
 
-        return `🚗 ${veh}
-Medida ${ln.size} (${ln.requestedQty})
-${first.brand} ${first.model} — $${first.priceEach} c/u`;
-      })
-      .join("\n\n");
+    const emailSubject = `Cotización Llantitune${quoteNumber ? " – " + quoteNumber : ""}`;
+    const emailBody =
+`Hola${customerName ? " " + customerName : ""},
 
-    const whatsappText = `Hola${customerName ? " " + customerName : ""} 👋
+Te comparto la cotización${quoteNumber ? " No. " + quoteNumber : ""}.
+${vehicle ? `Vehículo: ${vehicle}\n` : ""}
 
-Te comparto tu cotización:
-
-${linesText}
+${perLineResults
+  .map((lr: any) => {
+    const opts = lr.options ?? [];
+    if (!opts.length) return `- ${lr.size} (solicitado x${lr.requestedQty}): Sin disponibilidad`;
+    const lines = opts
+      .slice(0, 6)
+      .map((o: any) => `  ${o.rank}) ${o.brand} ${o.model} – $${o.priceEach} c/u (stock ${o.stock})`);
+    const note = opts.some((o: any) => o.limited) ? `  ⚠️ Algunas opciones tienen stock limitado hoy.` : "";
+    return `- ${lr.size} (solicitado x${lr.requestedQty}):\n${lines.join("\n")}${note ? "\n" + note : ""}`;
+  })
+  .join("\n\n")}
 
 Total final: $${grandTotal.toFixed(2)}
 
 ¿Con cuál opción te quedas para apartarla?
-`;
 
-    const emailSubject = `Cotización Llantitune - ${quoteNumber}`;
-    const emailBody = whatsappText;
-
-    return NextResponse.json({
-      ok: true,
+Saludos,
+Llantitune`;
+return NextResponse.json({
       quoteId,
       quoteNo,
       quoteNumber,
       createdAt: q.created_at,
       providersLatestSnapshot: latest,
       hasAnyOptions,
-
-      vehicles,
       lines: perLineResults,
-
       whatsappText,
       emailSubject,
       emailBody,
-
-      internal: {
-        markup,
-        install,
-        extras,
-        minStock,
-        numVehicles,
-        serviceTotal,
-        tiresTotalEstimate,
-        grandTotal,
-      },
+      internal: { markup, install, extras, minStock, numVehicles, serviceTotal, tiresTotalEstimate, grandTotal }
     });
   } catch (e: any) {
-    console.error("API /quote ERROR:", e);
     return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 });
   }
 }
