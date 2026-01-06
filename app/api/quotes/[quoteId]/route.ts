@@ -8,13 +8,13 @@ const supabase = createClient(
 
 export async function GET(
   request: Request,
-  context: { params: { quoteId: string } }
+  { params }: { params: any }
 ) {
-  const quoteId = context.params.quoteId;
+  const quoteId = params.quoteId as string;
 
   let query = supabase.from("quotes").select("*");
 
-  // Detectar UUID vs folio
+  // UUID vs folio
   if (quoteId.includes("-")) {
     query = query.eq("id", quoteId);
   } else {
@@ -25,10 +25,7 @@ export async function GET(
 
   if (error || !data) {
     return NextResponse.json(
-      {
-        error: "Quote not found",
-        quoteId,
-      },
+      { error: "Quote not found", quoteId },
       { status: 404 }
     );
   }
