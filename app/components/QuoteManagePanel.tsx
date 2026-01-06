@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import "./quote-manage-modal.css";
 
 export default function QuoteManagePanel({
   open,
@@ -13,7 +13,6 @@ export default function QuoteManagePanel({
   quoteId: string | null;
   onClose: () => void;
 }) {
-  const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,8 +21,6 @@ export default function QuoteManagePanel({
     if (!open || !quoteId) return;
 
     setLoading(true);
-    setError(null);
-
     fetch(`/api/quotes/${quoteId}`, { cache: "no-store" })
       .then((r) => r.json())
       .then(setData)
@@ -34,23 +31,27 @@ export default function QuoteManagePanel({
   if (!open) return null;
 
   return (
-    <div className="ltDrawerOverlay">
-      <div className="ltDrawer">
-        <div className="ltDrawerHeader">
-          <b>Gestionar cotización</b>
+    <div className="ltModalOverlay">
+      <div className="ltModal">
+        <div className="ltModalHeader">
+          <h3>Gestionar cotización</h3>
           <button className="btn" onClick={onClose}>Cerrar</button>
         </div>
 
-        <div className="ltDrawerBody">
-          {loading && <div>Cargando…</div>}
-          {error && <div style={{ color: "red" }}>{error}</div>}
-
+        <div className="ltModalBody">
+          {loading && <p>Cargando…</p>}
+          {error && <p className="error">{error}</p>}
           {data && (
             <>
-              <div><b>Folio:</b> {data.quote?.quote_number ?? "-"}</div>
-              <div><b>Status:</b> {data.quote?.status ?? "-"}</div>
+              <p><b>Folio:</b> {data.quote?.quote_number}</p>
+              <p><b>Cliente:</b> {data.quote?.customer_name}</p>
+              <p><b>Estatus:</b> {data.quote?.status}</p>
             </>
           )}
+        </div>
+
+        <div className="ltModalFooter">
+          <button className="btn" onClick={onClose}>Cerrar</button>
         </div>
       </div>
     </div>
