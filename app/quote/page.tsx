@@ -413,54 +413,57 @@ export default function QuotePage() {
   }[step];
 
   return (
-    <div className="lt-container" style={{ maxWidth: 1100 }}>
-      <h2>Cotizador Llantitune</h2>
-      <div style={{ color: "#666", marginTop: -8 }}>Flujo guiado: cliente → vehículo(s) → internos → medidas → seleccionar → previsualizar y enviar</div>
+    <div className="lt-container" style={{ maxWidth: 1100 }}>      <div className="card cardPadLg">
+        <div className="space">
+          <div>
+            <h1 className="h1">Cotizar</h1>
+            <p className="p" style={{ marginTop: 6 }}>
+              Flujo: cliente → vehículo(s) → internos → medidas → seleccionar → previsualizar y enviar.
+            </p>
+          </div>
+          <span className="badge" title="Guía rápida">
+            <span className="badgeDot" />
+            Cotizador paso a paso
+          </span>
+        </div>
+      </div>
 
-      <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
+      <div className="stepper">
         {[1, 2, 3, 4, 5].map((s) => (
           <button
             key={s}
             type="button"
             onClick={() => setStep(s as any)}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 999,
-              border: "1px solid #ddd",
-              background: step === s ? "#111" : "white",
-              color: step === s ? "white" : "#111",
-              cursor: "pointer",
-            }}
-          >
-            Paso {s}
+             className={`step ${step === s ? "stepActive" : ""}`}>
+            <span className="stepNum">{s}</span><span className="stepLabel">Paso {s}</span>
           </button>
         ))}
       </div>
 
-      <div style={{ marginTop: 12, padding: 14, border: "1px solid #eee", borderRadius: 14, background: "#fafafa" }}>
+      <div className="stepCard">
         <b>{stepTitle}</b>
       </div>
 
-      <div style={{ marginTop: 12, color: "#555" }}>{status}</div>
+      <div className="small" style={{ marginTop: 12 }}>{status}</div>
       {vehicleLoading ? <div style={{ marginTop: 6, color: "#666" }}>{vehicleLoading}</div> : null}
 
       {/* STEP 1 */}
       {step === 1 ? (
-        <div style={{ marginTop: 12, border: "1px solid #ddd", borderRadius: 14, padding: 14 }}>
+        <div className="card cardPadLg" style={{ marginTop: 12 }}>
           <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontWeight: 600 }}>Nombre*</span>
-              <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
+            <label className="field">
+              <span className="label">Nombre*</span>
+              <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="input" />
             </label>
 
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontWeight: 600 }}>Teléfono*</span>
-              <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
+            <label className="field">
+              <span className="label">Teléfono*</span>
+              <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="input" />
             </label>
 
             <label style={{ display: "grid", gap: 6, gridColumn: "1 / span 2" }}>
-              <span style={{ fontWeight: 600 }}>Email*</span>
-              <input value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
+              <span className="label">Email*</span>
+              <input value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} className="input" />
             </label>
           </div>
 
@@ -486,7 +489,7 @@ export default function QuotePage() {
 
       {/* STEP 2 */}
       {step === 2 ? (
-        <div style={{ marginTop: 12, border: "1px solid #ddd", borderRadius: 14, padding: 14 }}>
+        <div className="card cardPadLg" style={{ marginTop: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
             <h3 style={{ margin: 0 }}>Vehículos</h3>
             <button type="button" onClick={addVehicle} style={{ padding: "8px 12px", borderRadius: 12, border: "1px solid #ddd", background: "white" }}>
@@ -574,25 +577,25 @@ export default function QuotePage() {
 
       {/* STEP 3 */}
       {step === 3 ? (
-        <div style={{ marginTop: 12, border: "1px solid #ddd", borderRadius: 14, padding: 14 }}>
+        <div className="card cardPadLg" style={{ marginTop: 12 }}>
           <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontWeight: 600 }}>Anticipo (MXN) (interno)</span>
+            <label className="field">
+              <span className="label">Anticipo (MXN) (interno)</span>
               <input type="text" inputMode="numeric" pattern="[0-9]*" value={depositAmount}
                 onChange={(e) => setDepositAmount(e.target.value === "" ? "" : Number(e.target.value))}
-                style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                className="input"
               />
             </label>
 
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontWeight: 600 }}>Fecha promesa (interno)</span>
+            <label className="field">
+              <span className="label">Fecha promesa (interno)</span>
               <input type="date" value={promisedAt} onChange={(e) => setPromisedAt(e.target.value)}
-                style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                className="input"
               />
             </label>
 
             <label style={{ display: "grid", gap: 6, gridColumn: "1 / span 2" }}>
-              <span style={{ fontWeight: 600 }}>Notas internas (interno)</span>
+              <span className="label">Notas internas (interno)</span>
               <textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)}
                 style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", minHeight: 90 }}
               />
@@ -604,32 +607,32 @@ export default function QuotePage() {
               Ajustes internos (markup/servicios/stock mínimo)
             </summary>
             <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr 1fr 1fr", marginTop: 10 }}>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontWeight: 600 }}>Markup %</span>
+              <label className="field">
+                <span className="label">Markup %</span>
                 <input type="text" inputMode="numeric" pattern="[0-9]*" value={markup}
                   onChange={(e) => setMarkup(Number(e.target.value) || 0)}
-                  style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                  className="input"
                 />
               </label>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontWeight: 600 }}>Instalación</span>
+              <label className="field">
+                <span className="label">Instalación</span>
                 <input type="text" inputMode="numeric" pattern="[0-9]*" value={install}
                   onChange={(e) => setInstall(Number(e.target.value) || 0)}
-                  style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                  className="input"
                 />
               </label>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontWeight: 600 }}>Extras</span>
+              <label className="field">
+                <span className="label">Extras</span>
                 <input type="text" inputMode="numeric" pattern="[0-9]*" value={extras}
                   onChange={(e) => setExtras(Number(e.target.value) || 0)}
-                  style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                  className="input"
                 />
               </label>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontWeight: 600 }}>Stock mínimo</span>
+              <label className="field">
+                <span className="label">Stock mínimo</span>
                 <input type="text" inputMode="numeric" pattern="[0-9]*" value={minStock}
                   onChange={(e) => setMinStock(Number(e.target.value) || 0)}
-                  style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                  className="input"
                 />
               </label>
             </div>
@@ -648,7 +651,7 @@ export default function QuotePage() {
 
       {/* STEP 4 */}
       {step === 4 ? (
-        <div style={{ marginTop: 12, border: "1px solid #ddd", borderRadius: 14, padding: 14 }}>
+        <div className="card cardPadLg" style={{ marginTop: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
             <h3 style={{ margin: 0 }}>Medidas y cantidades (por vehículo)</h3>
             <button type="button" onClick={addLine} style={{ padding: "8px 12px", borderRadius: 12, border: "1px solid #ddd", background: "white" }}>
@@ -664,7 +667,7 @@ export default function QuotePage() {
                   <select
                     value={String(l.vehicleIndex)}
                     onChange={(e) => updateLine(idx, { vehicleIndex: Number(e.target.value) })}
-                    style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                    className="input"
                   >
                     {vehicles.map((v, i) => (
                       <option key={i} value={String(i)}>
@@ -674,16 +677,16 @@ export default function QuotePage() {
                   </select>
                 </div>
 
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontWeight: 600 }}>Medida (ej. 215/55R16)</span>
-                  <input value={l.size} onChange={(e) => updateLine(idx, { size: e.target.value })} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
+                <label className="field">
+                  <span className="label">Medida (ej. 215/55R16)</span>
+                  <input value={l.size} onChange={(e) => updateLine(idx, { size: e.target.value })} className="input" />
                 </label>
 
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontWeight: 600 }}>Cantidad</span>
+                <label className="field">
+                  <span className="label">Cantidad</span>
                   <input type="text" inputMode="numeric" pattern="[0-9]*" value={l.qty}
                     onChange={(e) => updateLine(idx, { qty: Number(e.target.value) || 0 })}
-                    style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }}
+                    className="input"
                   />
                   <div style={{ color: "#666", fontSize: 12 }}>Mínimo 1</div>
                 </label>
@@ -816,15 +819,15 @@ export default function QuotePage() {
 
       {/* STEP 5 */}
       {step === 5 ? (
-        <div style={{ marginTop: 12, border: "1px solid #ddd", borderRadius: 14, padding: 14 }}>
+        <div className="card cardPadLg" style={{ marginTop: 12 }}>
           {!draft ? (
-            <div style={{ color: "#666" }}>Primero ve opciones en el Paso 4.</div>
+            <div className="small">Primero ve opciones en el Paso 4.</div>
           ) : (
             <>
               <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
                 <div>
                   <div style={{ fontSize: 18 }}><b>{draft.quoteNumber ?? "BORRADOR (sin folio)"}</b></div>
-                  <div style={{ color: "#666" }}>
+                  <div className="small">
                     Cliente: <b>{customerName}</b> — {customerPhone} — {customerEmail}
                   </div>
                 </div>
@@ -848,21 +851,21 @@ export default function QuotePage() {
               </div>
 
               <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontWeight: 600 }}>Texto inicial</span>
-                  <input value={msgIntro} onChange={(e) => setMsgIntro(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
+                <label className="field">
+                  <span className="label">Texto inicial</span>
+                  <input value={msgIntro} onChange={(e) => setMsgIntro(e.target.value)} className="input" />
                 </label>
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontWeight: 600 }}>Texto final</span>
-                  <input value={msgOutro} onChange={(e) => setMsgOutro(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
+                <label className="field">
+                  <span className="label">Texto final</span>
+                  <input value={msgOutro} onChange={(e) => setMsgOutro(e.target.value)} className="input" />
                 </label>
                 <label style={{ display: "grid", gap: 6, gridColumn: "1 / span 2" }}>
-                  <span style={{ fontWeight: 600 }}>Nota adicional (opcional)</span>
-                  <input value={msgNote} onChange={(e) => setMsgNote(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
+                  <span className="label">Nota adicional (opcional)</span>
+                  <input value={msgNote} onChange={(e) => setMsgNote(e.target.value)} className="input" />
                 </label>
               </div>
 
-              <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div className="stepper">
                 <button type="button" onClick={() => navigator.clipboard.writeText(buildPreviewText())} disabled={!isSent} title={!isSent ? 'Primero pulsa Enviar para asignar folio' : ''}>Copiar texto</button>
                 <button type="button" onClick={openWhatsapp} disabled={!isSent} title={!isSent ? 'Primero pulsa Enviar para asignar folio' : ''}>Abrir WhatsApp</button>
                 <button type="button" onClick={prepareEmail} disabled={!isSent} title={!isSent ? 'Primero pulsa Enviar para asignar folio' : ''}>Preparar correo</button>

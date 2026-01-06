@@ -7,8 +7,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <body>
-        <Topbar />
-        <div className="container">{children}</div>
+        <div className="appShell">
+          <Topbar />
+          <main className="appMain">
+            <div className="container">{children}</div>
+          </main>
+        </div>
       </body>
     </html>
   );
