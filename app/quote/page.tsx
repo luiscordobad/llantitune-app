@@ -338,6 +338,8 @@ export default function QuotePage() {
     const internal = (draft as any)?.internal ?? (draft as any) ?? {};
     const numVehicles = Number((internal as any).numVehicles ?? (draft as any)?.numVehicles ?? vehicles.length ?? 1) || 1;
     const serviceTotal = Number((internal as any).serviceTotal ?? (draft as any)?.serviceTotal ?? ((install + extras) * numVehicles)) || 0;
+    const installTotal = (Number(install) || 0) * numVehicles;
+    const extrasTotal = (Number(extras) || 0) * numVehicles;
 
     // Tires total estimate: first included option per line (or first option)
     const tiresTotalEstimate = (draft?.lines ?? []).reduce((sum: number, ln: any) => {
@@ -350,8 +352,8 @@ export default function QuotePage() {
 
     const totalsBlock = [
       "",
-      serviceTotal > 0 ? `Servicios (instalación + extras): ${fmtMoney(serviceTotal)}` : null,
-      `Total estimado: ${fmtMoney(grandTotal)}`,
+      installTotal > 0 ? `Servicio de alineación y balanceo: ${fmtMoney(installTotal)}` : null,
+      extrasTotal > 0 ? `Extras: ${fmtMoney(extrasTotal)}` : null,
     ].filter(Boolean) as string[];
 
     const footer = ["", msgOutro].filter(Boolean);
