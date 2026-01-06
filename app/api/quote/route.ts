@@ -294,6 +294,14 @@ const defaults = await getSettingsDefaults();
         lineNo: line.line_no,
         size,
         requestedQty,
+        vehicleIndex: line.vehicle_index,
+        vehicleMake: line.vehicle_make,
+        vehicleModel: line.vehicle_model,
+        vehicleYear: line.vehicle_year,
+        vehicle_index: line.vehicle_index,
+        vehicle_make: line.vehicle_make,
+        vehicle_model: line.vehicle_model,
+        vehicle_year: line.vehicle_year,
         options: tiered,
         anyLimited
       });
