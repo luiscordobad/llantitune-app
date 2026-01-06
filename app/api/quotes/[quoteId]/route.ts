@@ -1,14 +1,18 @@
-
 import { NextResponse } from "next/server";
 
 export async function GET(
-  request: Request,
+  _req: Request,
   { params }: { params: { quoteId: string } }
 ) {
+  const { quoteId } = params;
+
   return NextResponse.json({
-    id: params.quoteId,
+    id: quoteId,
     status: "SENT",
-    folio: "LLT-000013",
-    message: "Quote loaded successfully"
+    items: [],
+    customer: {
+      name: "Demo",
+      phone: "0000000000"
+    }
   });
 }
