@@ -6,33 +6,64 @@ export const runtime = "nodejs";
 
 export async function GET(_req: Request, ctx: any) {
   try {
-    const quoteId = String(ctx?.params?.quoteId || "");
-    if (!quoteId) {
+    const rawId = String(ctx?.params?.quoteId || "").trim();
+    if (!rawId) {
       return NextResponse.json({ error: "Missing quoteId" }, { status: 400 });
     }
 
-    const { data: quote, error: qErr } = await supabaseAdmin
+    // 1) Try by UUID
+    let quote = null;
+    let quoteId = rawId;
+
+    const byUuid = await supabaseAdmin
       .from("quotes")
       .select("*")
-      .eq("quote_id", quoteId)
-      .single();
-    if (qErr) throw qErr;
+      .eq("quote_id", rawId)
+      .maybeSingle();
 
-    const { data: lines, error: lErr } = await supabaseAdmin
+    if (byUuid.data) {
+      quote = byUuid.data;
+      quoteId = byUuid.data.quote_id;
+    }
+
+    // 2) Fallback by quote_number / quote_no
+    if (!quote) {
+      const byNumber = await supabaseAdmin
+        .from("quotes")
+        .select("*")
+        .or(`quote_number.eq.${rawId},quote_no.eq.${rawId}`)
+        .maybeSingle();
+
+      if (byNumber.data) {
+        quote = byNumber.data;
+        quoteId = byNumber.data.quote_id;
+      }
+    }
+
+    if (!quote) {
+      return NextResponse.json(
+        { error: "Quote not found", id: rawId },
+        { status: 404 }
+      );
+    }
+
+    const { data: lines } = await supabaseAdmin
       .from("quote_lines")
       .select("*")
       .eq("quote_id", quoteId)
       .order("line_no", { ascending: true });
-    if (lErr) throw lErr;
 
-    const { data: items, error: iErr } = await supabaseAdmin
+    const { data: items } = await supabaseAdmin
       .from("quote_items")
       .select("*")
       .eq("quote_id", quoteId)
       .order("rank", { ascending: true });
-    if (iErr) throw iErr;
 
-    return NextResponse.json({ quote, lines: lines ?? [], items: items ?? [] });
+    return NextResponse.json({
+      quote,
+      lines: lines ?? [],
+      items: items ?? [],
+    });
   } catch (e: any) {
     return NextResponse.json(
       { error: e?.message ?? String(e) },
