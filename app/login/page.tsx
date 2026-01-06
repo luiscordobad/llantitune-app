@@ -9,36 +9,63 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
 
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) window.location.href = "/";
+    });
+  }, []);
+
   async function signIn() {
     setStatus("Entrando...");
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return setStatus("Error: " + error.message);
-
-    const next = new URLSearchParams(window.location.search).get("next") || "/admin";
-    window.location.href = next;
+    setStatus("✅ Listo. Redirigiendo...");
+    window.location.href = "/";
   }
 
   return (
-    <div style={{ maxWidth: 520 }}>
-      <h2>Login</h2>
-      <p style={{ color: "#666" }}>Acceso para Admin y Mecánicos.</p>
+    <div style={{ maxWidth: 520, margin: "26px auto 0" }}>
+      <div className="card cardPadLg">
+        <div className="space" style={{ alignItems: "flex-start" }}>
+          <div>
+            <h1 className="h1" style={{ fontSize: 22 }}>Login</h1>
+            <p className="p">Acceso para Admin y Mecánicos.</p>
+          </div>
+          <span className="badge">
+            <span className="badgeDot" />
+            Supabase Auth
+          </span>
+        </div>
 
-      <div style={{ display: "grid", gap: 10 }}>
-        <label>Email
-          <input value={email} onChange={e => setEmail(e.target.value)} />
-        </label>
-        <label>Password
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} />
-        </label>
-        <button onClick={signIn}>Entrar</button>
+        <hr className="hr" />
+
+        <div className="field">
+          <span className="label">Email</span>
+          <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@email.com" />
+        </div>
+
+        <div className="field" style={{ marginTop: 12 }}>
+          <span className="label">Password</span>
+          <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+        </div>
+
+        <div className="row" style={{ marginTop: 14, justifyContent: "flex-end" }}>
+          <button className="btn btnPrimary" onClick={signIn} type="button" disabled={!email || !password}>
+            Entrar
+          </button>
+        </div>
+
+        {status ? (
+          <div style={{ marginTop: 10 }} className="small">
+            {status}
+          </div>
+        ) : null}
+
+        <hr className="hr" />
+        <p className="p" style={{ margin: 0 }}>
+          * Los usuarios se crean en Supabase Auth. El rol se asigna en la tabla <b>profiles</b> (campo <b>role</b>).
+        </p>
       </div>
-
-      <div style={{ marginTop: 10, color: "#555" }}>{status}</div>
-
-      <hr style={{ margin: "18px 0" }} />
-      <p style={{ color: "#666" }}>
-        * Los usuarios se crean desde Supabase Auth. Luego se asigna rol en la tabla <b>profiles</b>.
-      </p>
     </div>
   );
 }
