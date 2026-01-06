@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-
 function vehicleLabelFromLine(ln: any) {
   const make = (ln as any).vehicleMake ?? (ln as any).vehicle_make ?? "";
   const model = (ln as any).vehicleModel ?? (ln as any).vehicle_model ?? "";
@@ -76,6 +75,21 @@ function Combobox({
 
 function fmtMoney(n: number) {
   return "$" + (Number.isFinite(n) ? n.toFixed(2) : "0.00");
+}
+
+/**
+ * IMPORTANT FIX (Step 4 selection):
+ * Your backend is returning options without a unique quoteItemId (often undefined),
+ * so React keys collide and the toggle logic matches ALL options (undefined === undefined).
+ * We generate a stable optionKey on the client to control each checkbox independently.
+ */
+function makeOptionKey(lineId: string, o: any) {
+  const provider = String(o?.provider ?? "");
+  const sku = String(o?.sku ?? "");
+  const rank = String(o?.rank ?? "");
+  const tireId = String(o?.tireId ?? o?.tire_id ?? "");
+  // Prefer DB id if exists; otherwise fall back to a stable composite key
+  return String(o?.quoteItemId ?? o?.quote_item_id ?? `${lineId}::${provider}::${sku || tireId}::${rank}`);
 }
 
 export default function QuotePage() {
@@ -226,20 +240,38 @@ export default function QuotePage() {
     const d = await res.json();
     if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
 
+    // Ensure quoteNumber exists
     d.quoteNumber = d.quoteNumber ?? "BORRADOR (sin folio)";
+
+    // IMPORTANT: enrich options with a stable optionKey so each checkbox toggles independently
+    d.lines = (d.lines ?? []).map((ln: any) => {
+      const lineId = String(ln.lineId ?? ln.line_id ?? "");
+      const options = (ln.options ?? []).map((o: any) => ({
+        ...o,
+        optionKey: makeOptionKey(lineId, o),
+      }));
+      return { ...ln, lineId, options };
+    });
+
     setDraft(d);
     setStatus("✅ Listo. Selecciona qué opciones vas a enviar al cliente (o envía todas).");
   }
 
-  async function setIncluded(quoteItemId: string, included: boolean) {
+  async function setIncluded(optionKey: string, included: boolean, quoteItemId?: string) {
+    // Local state (always)
     setDraft((prev: any) => {
       if (!prev) return prev;
       const lines = (prev.lines ?? []).map((ln: any) => ({
         ...ln,
-        options: (ln.options ?? []).map((o: any) => (o.quoteItemId === quoteItemId ? { ...o, included } : o)),
+        options: (ln.options ?? []).map((o: any) =>
+          (String(o.optionKey ?? "") === String(optionKey) ? { ...o, included } : o)
+        ),
       }));
       return { ...prev, lines };
     });
+
+    // Persist only if we have a real quoteItemId from DB (uuid)
+    if (!quoteItemId) return;
 
     const res = await fetch("/api/quote/include", {
       method: "POST",
@@ -251,9 +283,11 @@ export default function QuotePage() {
   }
 
   function toggleAllInLine(lineId: string, includeAll: boolean) {
-    const ln = (draft?.lines ?? []).find((x: any) => x.lineId === lineId);
+    const ln = (draft?.lines ?? []).find((x: any) => String(x.lineId) === String(lineId));
     if (!ln) return;
-    for (const o of ln.options ?? []) setIncluded(o.quoteItemId, includeAll);
+    for (const o of ln.options ?? []) {
+      setIncluded(String(o.optionKey), includeAll, o.quoteItemId);
+    }
   }
 
   function lineHasAtLeastOneIncluded(line: any) {
@@ -328,7 +362,6 @@ export default function QuotePage() {
     if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
     setStatus("✅ ENVIADA. Ya puedes mandarla por WhatsApp o correo.");
     if (d.quoteNumber) setDraft((p: any) => ({ ...p, quoteNumber: d.quoteNumber }));
-    // also mark as sent in local state
     setDraft((p: any) => ({ ...p, status: 'SENT' }));
   }
 
@@ -703,25 +736,29 @@ export default function QuotePage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {ln.options.map((o: any) => (
-                              <tr key={o.quoteItemId} style={{ opacity: o.included === false ? 0.45 : 1 }}>
-                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={o.included !== false}
-                                    onChange={(e) => setIncluded(o.quoteItemId, e.target.checked)}
-                                  />
-                                </td>
-                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}><b>{o.tierLabel}</b></td>
-                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{o.brand}</td>
-                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{o.model}</td>
-                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{o.loadSpeed ?? ""}</td>
-                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>{o.stock}</td>
-                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>{o.quotedQty}</td>
-                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>{fmtMoney(o.priceEach)}</td>
-                                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>{fmtMoney(o.totalTires)}</td>
-                              </tr>
-                            ))}
+                            {ln.options.map((o: any) => {
+                              const optionKey = String(o.optionKey ?? makeOptionKey(String(ln.lineId), o));
+                              const quoteItemId = o.quoteItemId ?? o.quote_item_id; // may be undefined
+                              return (
+                                <tr key={optionKey} style={{ opacity: o.included === false ? 0.45 : 1 }}>
+                                  <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={o.included !== false}
+                                      onChange={(e) => setIncluded(optionKey, e.target.checked, quoteItemId)}
+                                    />
+                                  </td>
+                                  <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}><b>{o.tierLabel}</b></td>
+                                  <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{o.brand}</td>
+                                  <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{o.model}</td>
+                                  <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{o.loadSpeed ?? ""}</td>
+                                  <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>{o.stock}</td>
+                                  <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>{o.quotedQty}</td>
+                                  <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>{fmtMoney(o.priceEach)}</td>
+                                  <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>{fmtMoney(o.totalTires)}</td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -768,19 +805,9 @@ export default function QuotePage() {
                   </div>
                 </div>
 
-              {!isSent ? (
-                <div style={{ marginTop: 10, color: "#b45309" }}>
-                  <b>Nota:</b> Aún es borrador. Pulsa <b>Enviar (genera folio)</b> para asignar el número de cotización y habilitar WhatsApp/Correo.
-                </div>
-              ) : null}
-
-                
-                {draft?.serviceTotal != null ? (
-                  <div style={{ marginTop: 10, background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
-                    <div><b>Resumen interno</b></div>
-                    <div style={{ marginTop: 6 }}><b>Vehículos:</b> {draft.numVehicles ?? 1}</div>
-                    <div><b>Servicios (por coche):</b> ${Number(draft.serviceTotal || 0).toFixed(2)}</div>
-                    <div><b>Total estimado (llantas + servicios):</b> ${Number(draft.grandTotal || 0).toFixed(2)}</div>
+                {!isSent ? (
+                  <div style={{ marginTop: 10, color: "#b45309" }}>
+                    <b>Nota:</b> Aún es borrador. Pulsa <b>Enviar (genera folio)</b> para asignar el número de cotización y habilitar WhatsApp/Correo.
                   </div>
                 ) : null}
 
