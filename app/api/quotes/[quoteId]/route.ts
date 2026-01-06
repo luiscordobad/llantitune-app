@@ -3,12 +3,18 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
-export async function GET(
-  _req: Request,
-  { params }: { params: { quoteId: string } }
-) {
+/**
+ * NOTE:
+ * We intentionally keep the 2nd argument untyped ("any") to avoid
+ * Next.js route handler context type differences across versions.
+ */
+export async function GET(_req: Request, ctx: any) {
   try {
-    const quoteId = params.quoteId;
+    const quoteId = String(ctx?.params?.quoteId ?? "");
+
+    if (!quoteId) {
+      return NextResponse.json({ error: "Missing quoteId" }, { status: 400 });
+    }
 
     const { data: quote, error: qErr } = await supabaseAdmin
       .from("quotes")
@@ -31,11 +37,7 @@ export async function GET(
       .order("rank", { ascending: true });
     if (iErr) throw iErr;
 
-    return NextResponse.json({
-      quote,
-      lines: lines ?? [],
-      items: items ?? []
-    });
+    return NextResponse.json({ quote, lines: lines ?? [], items: items ?? [] });
   } catch (e: any) {
     return NextResponse.json(
       { error: e?.message ?? String(e) },
@@ -43,4 +45,3 @@ export async function GET(
     );
   }
 }
-
