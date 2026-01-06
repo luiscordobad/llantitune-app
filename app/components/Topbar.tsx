@@ -64,12 +64,13 @@ export default function Topbar() {
     const workAdmin = { href: "/admin/orders", label: "Órdenes", meta: "Taller" };
     const workMechanic = { href: "/work", label: "Órdenes", meta: "Taller" };
     const customers = { href: "/admin/customers", label: "Clientes", meta: "CRM" };
+    const quotes = { href: "/admin/quotes", label: "Cotizaciones", meta: "Buscar" };
     const reports = { href: "/admin/reports", label: "Reportes", meta: "KPIs" };
     const admin = { href: "/admin", label: "Admin", meta: "Catálogos" };
 
     if (role === "mechanic") return [workMechanic];
-    if (role === "admin") return [dashboard, quote, workAdmin, customers, reports, admin];
-    if (role === "staff") return [dashboard, quote, workAdmin, customers];
+    if (role === "admin") return [dashboard, quote, workAdmin, customers, quotes, reports, admin];
+    if (role === "staff") return [dashboard, quote, workAdmin, customers, quotes];
     return [dashboard];
   }, [role]);
 
