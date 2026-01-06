@@ -3,8 +3,6 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
-// Compatibility route: the app already uses /api/quote/* (singular) for other handlers.
-// This endpoint returns quote + lines + items for managing a quote.
 export async function GET(_req: Request, ctx: any) {
   try {
     const quoteId = String(ctx?.params?.quoteId || "");

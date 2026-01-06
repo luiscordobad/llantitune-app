@@ -31,6 +31,26 @@ async function safeJson(res: Response) {
   }
 }
 
+async function fetchQuoteDetail(quoteId: string) {
+  // Robust: try plural route first (used by this upgrade), then singular (legacy).
+  const urls = [`/api/quotes/${quoteId}`, `/api/quote/${quoteId}`];
+
+  let lastErr: any = null;
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      const j = await safeJson(res);
+      if (!res.ok) throw new Error(j?.error ?? `Failed to load quote (${res.status})`);
+      return j as QuoteDetail;
+    } catch (e: any) {
+      lastErr = e;
+    }
+  }
+
+  throw lastErr ?? new Error("Failed to load quote");
+}
+
 export function QuoteManagePanel({
   quoteId,
   open,
@@ -51,10 +71,8 @@ export function QuoteManagePanel({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/quote/${quoteId}`, { cache: "no-store" });
-      const j = await safeJson(res);
-      if (!res.ok) throw new Error(j?.error ?? "Failed to load quote");
-      setDetail(j);
+      const d = await fetchQuoteDetail(quoteId);
+      setDetail(d);
     } catch (e: any) {
       setError(e?.message ?? String(e));
     } finally {
@@ -199,6 +217,9 @@ export function QuoteManagePanel({
             <div className="card cardPadLg" style={{ borderColor: "var(--danger-200)" }}>
               <div style={{ fontWeight: 800, marginBottom: 6 }}>Error</div>
               <div style={{ whiteSpace: "pre-wrap" }}>{error}</div>
+              <div style={{ opacity: 0.7, fontSize: 12, marginTop: 8 }}>
+                Tip: en consola, revisa si el endpoint devuelve 404/401/500.
+              </div>
             </div>
           )}
 
@@ -224,7 +245,14 @@ export function QuoteManagePanel({
           {!loading && detail && (
             <div style={{ display: "grid", gap: 12 }}>
               <div className="card cardPadLg">
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    alignItems: "baseline"
+                  }}
+                >
                   <div style={{ fontWeight: 800 }}>Líneas</div>
                   <div style={{ opacity: 0.7, fontSize: 12 }}>
                     Seleccionadas: <b>{selectedCount}</b> / {(detail.lines ?? []).length}
@@ -235,14 +263,24 @@ export function QuoteManagePanel({
                   {(detail.lines ?? []).map((ln: any) => {
                     const lid = String(ln.line_id);
                     const opts = itemsByLine.get(lid) ?? [];
-                    const selectedId = ln.selected_quote_item_id ? String(ln.selected_quote_item_id) : null;
+                    const selectedId = ln.selected_quote_item_id
+                      ? String(ln.selected_quote_item_id)
+                      : null;
 
                     return (
                       <div key={lid} className="card cardPad">
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 12
+                          }}
+                        >
                           <div>
                             <div style={{ fontWeight: 800 }}>
-                              {ln.size ?? "-"} <span style={{ opacity: 0.6 }}>×</span> {ln.quantity ?? 1}
+                              {ln.size ?? "-"}{" "}
+                              <span style={{ opacity: 0.6 }}>×</span>{" "}
+                              {ln.quantity ?? 1}
                             </div>
                             <div style={{ opacity: 0.75, fontSize: 12 }}>
                               {ln.vehicle_make || ln.vehicle_model || ln.vehicle_year
@@ -283,12 +321,27 @@ export function QuoteManagePanel({
                                   border: isSelected
                                     ? "1px solid var(--primary-300)"
                                     : "1px solid var(--border)",
-                                  background: isSelected ? "var(--primary-50)" : "white"
+                                  background: isSelected
+                                    ? "var(--primary-50)"
+                                    : "white"
                                 }}
                               >
                                 <div style={{ minWidth: 0 }}>
-                                  <div style={{ fontWeight: 800, display: "flex", gap: 8, alignItems: "baseline" }}>
-                                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  <div
+                                    style={{
+                                      fontWeight: 800,
+                                      display: "flex",
+                                      gap: 8,
+                                      alignItems: "baseline"
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap"
+                                      }}
+                                    >
                                       {(it.brand ?? "-") + " " + (it.model ?? "")}
                                     </span>
                                     <span style={{ opacity: 0.7, fontSize: 12 }}>
@@ -307,7 +360,10 @@ export function QuoteManagePanel({
                                     ${(Number(it.price_each ?? 0)).toFixed(2)}
                                   </div>
                                   <div style={{ opacity: 0.75, fontSize: 12 }}>
-                                    total ${(Number(it.total_with_services ?? it.total_tires ?? 0)).toFixed(2)}
+                                    total $
+                                    {(
+                                      Number(it.total_with_services ?? it.total_tires ?? 0)
+                                    ).toFixed(2)}
                                   </div>
                                 </div>
 
@@ -334,7 +390,8 @@ export function QuoteManagePanel({
               {!canApprove && (
                 <div className="card cardPadLg" style={{ borderColor: "var(--border)" }}>
                   <div style={{ fontWeight: 900, marginBottom: 4 }}>
-                    La cotización debe estar en <span className="pill pillOk">SENT</span> para aprobar.
+                    La cotización debe estar en{" "}
+                    <span className="pill pillOk">SENT</span> para aprobar.
                   </div>
                   <div style={{ opacity: 0.75, fontSize: 13 }}>
                     Si está en DRAFT, usa “Marcar como enviada (SENT)”.
@@ -363,5 +420,4 @@ export function QuoteManagePanel({
   );
 }
 
-// Keep BOTH exports to be compatible with existing imports in the app.
 export default QuoteManagePanel;
