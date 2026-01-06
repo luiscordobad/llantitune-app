@@ -10,9 +10,9 @@ type QuoteDetail = {
 };
 
 async function safeJson(res: Response) {
-  // Avoid crashing on HTML/redirect error pages.
   const ct = res.headers.get("content-type") || "";
   const text = await res.text();
+
   if (ct.includes("application/json")) {
     try {
       return JSON.parse(text);
@@ -20,7 +20,7 @@ async function safeJson(res: Response) {
       // fall through
     }
   }
-  // Try parse anyway; if not, throw friendly error with snippet
+
   try {
     return JSON.parse(text);
   } catch {
@@ -51,7 +51,6 @@ export function QuoteManagePanel({
     setLoading(true);
     setError(null);
     try {
-      // Use singular /api/quote/* to align with existing API namespace in the app.
       const res = await fetch(`/api/quote/${quoteId}`, { cache: "no-store" });
       const j = await safeJson(res);
       if (!res.ok) throw new Error(j?.error ?? "Failed to load quote");
@@ -156,7 +155,6 @@ export function QuoteManagePanel({
 
       const orderId = j.order_id as string;
       onClose();
-      // Some deployments keep orders in /admin/orders; others in /work. We keep current behavior:
       router.push(`/admin/orders?open=${encodeURIComponent(orderId)}`);
     } catch (e: any) {
       setError(e?.message ?? String(e));
@@ -364,3 +362,6 @@ export function QuoteManagePanel({
     </div>
   );
 }
+
+// Keep BOTH exports to be compatible with existing imports in the app.
+export default QuoteManagePanel;
