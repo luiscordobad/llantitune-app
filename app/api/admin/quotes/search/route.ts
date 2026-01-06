@@ -1,57 +1,44 @@
+
 import { NextResponse } from "next/server";
-import { supabaseServer } from "@/lib/supabaseServer";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
   try {
-    const supabase = await supabaseServer();
-    const {
-      data: { user },
-      error: uErr,
-    } = await supabase.auth.getUser();
-    if (uErr) throw uErr;
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const { searchParams } = new URL(req.url);
+    const q = (searchParams.get("q") || "").trim();
 
-    const { data: prof, error: pErr } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-    if (pErr) throw pErr;
-
-    const role = String(prof?.role ?? "").toLowerCase();
-    if (role !== "admin" && role !== "staff") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!q) {
+      return NextResponse.json({ rows: [] });
     }
 
-    const url = new URL(req.url);
-    const q = (url.searchParams.get("q") ?? "").trim();
-    if (!q) return NextResponse.json({ rows: [] });
-
-    const pattern = `%${q}%`;
-
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("quotes")
-      .select(
-        "quote_id, created_at, quote_no, quote_number, status, customer_id, customer_name, customer_phone, customer_email, vehicle_text, size, quantity"
-      )
+      .select(`
+        quote_id,
+        quote_number,
+        quote_no,
+        created_at,
+        status,
+        customer_name,
+        customer_phone,
+        customer_email,
+        vehicle_text
+      `)
       .or(
-        [
-          `quote_number.ilike.${pattern}`,
-          `customer_phone.ilike.${pattern}`,
-          `customer_name.ilike.${pattern}`,
-          `customer_email.ilike.${pattern}`,
-          `vehicle_text.ilike.${pattern}`,
-        ].join(",")
+        `customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%,customer_email.ilike.%${q}%,quote_number.ilike.%${q}%`
       )
       .order("created_at", { ascending: false })
-      .limit(60);
+      .limit(50);
 
     if (error) throw error;
 
     return NextResponse.json({ rows: data ?? [] });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message ?? String(e) },
+      { status: 500 }
+    );
   }
 }
