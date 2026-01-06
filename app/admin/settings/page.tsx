@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import PageHeader from "@/app/components/PageHeader";
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
@@ -40,23 +41,38 @@ export default function SettingsPage() {
     setMsg("OK ✅ Guardado");
   }
 
-  if (loading) return <div>Cargando...</div>;
+  if (loading) return <div className="card cardPadLg"><span className="badge">Cargando...</span></div>;
 
   return (
-    <div style={{ maxWidth: 900 }}>
-      <h2>Ajustes</h2>
-      <p style={{ color: "#555" }}>Estos valores se usan como defaults en el cotizador.</p>
+    <div>
+      <PageHeader
+        title="Ajustes"
+        description="Estos valores se usan como defaults en el cotizador."
+        right={msg ? <span className="badge">{msg}</span> : null}
+      />
 
-      <div style={{ display: "grid", gap: 12, maxWidth: 420 }}>
-        <label>Markup default % <input type="text" inputMode="numeric" pattern="[0-9]*" value={markup} onChange={e => setMarkup(Number(e.target.value))} /></label>
-        <label>Instalación por llanta <input type="text" inputMode="numeric" pattern="[0-9]*" value={install} onChange={e => setInstall(Number(e.target.value))} /></label>
-        <label>Extras por llanta <input type="text" inputMode="numeric" pattern="[0-9]*" value={extras} onChange={e => setExtras(Number(e.target.value))} /></label>
-        <label>Stock mínimo <input type="text" inputMode="numeric" pattern="[0-9]*" value={minStock} onChange={e => setMinStock(Number(e.target.value))} /></label>
+      <div className="card cardPadLg" style={{ maxWidth: 520 }}>
+        <div style={{ display: "grid", gap: 12 }}>
+          <div className="field">
+            <div className="label">Markup default %</div>
+            <input className="input" type="text" inputMode="numeric" pattern="[0-9]*" value={markup} onChange={e => setMarkup(Number(e.target.value))} />
+          </div>
+          <div className="field">
+            <div className="label">Instalación por llanta</div>
+            <input className="input" type="text" inputMode="numeric" pattern="[0-9]*" value={install} onChange={e => setInstall(Number(e.target.value))} />
+          </div>
+          <div className="field">
+            <div className="label">Extras por llanta</div>
+            <input className="input" type="text" inputMode="numeric" pattern="[0-9]*" value={extras} onChange={e => setExtras(Number(e.target.value))} />
+          </div>
+          <div className="field">
+            <div className="label">Stock mínimo</div>
+            <input className="input" type="text" inputMode="numeric" pattern="[0-9]*" value={minStock} onChange={e => setMinStock(Number(e.target.value))} />
+          </div>
 
-        <button onClick={save} style={{ width: 180 }}>Guardar</button>
+          <button onClick={save} className="btn btnPrimary" style={{ width: 180 }}>Guardar</button>
+        </div>
       </div>
-
-      <div style={{ marginTop: 12, color: "#555" }}>{msg}</div>
     </div>
   );
 }

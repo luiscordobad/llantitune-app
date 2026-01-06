@@ -202,6 +202,17 @@ button,input,select,textarea{ font: inherit; }
 .h2{ font-size: 18px; margin: 0; letter-spacing: -0.01em; }
 .p{ margin: 6px 0 0; color: var(--muted); }
 
+.pageHeader{
+  display:flex;
+  justify-content: space-between;
+  align-items:flex-start;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+.pageHeaderRight{ display:flex; align-items:center; gap: 10px; }
+
 /* Cards */
 .card{
   background: var(--card);

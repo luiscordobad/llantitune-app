@@ -39,22 +39,46 @@ export async function GET() {
 
     const quoteIds = (quotes ?? []).map((q: any) => q.quote_id).filter(Boolean);
 
-    const { data: lines, error: lErr } = await supabaseAdmin
-      .from("quote_lines")
-      .select("size, created_at")
-      .gte("created_at", since.toISOString())
-      .limit(6000);
+    // NOTE: Some installs do not include created_at in quote_lines / quote_items.
+    // To keep the dashboard functional without changing business logic, we scope
+    // to the last 30d *quotes* and then pull related rows by quote_id.
 
-    // quote_lines may not have created_at in some installs; tolerate by using quotes only
-    const linesSafe = lErr ? [] : (lines ?? []);
+    const linesSafe: any[] = [];
+    let lErr: any = null;
+    if (quoteIds.length) {
+      // chunk .in() to avoid query limits
+      for (let i = 0; i < quoteIds.length; i += 400) {
+        const chunk = quoteIds.slice(i, i + 400);
+        const { data, error } = await supabaseAdmin
+          .from("quote_lines")
+          .select("quote_id, size")
+          .in("quote_id", chunk)
+          .limit(6000);
+        if (error) {
+          lErr = error;
+          break;
+        }
+        linesSafe.push(...(data ?? []));
+      }
+    }
 
-    const { data: items, error: iErr } = await supabaseAdmin
-      .from("quote_items")
-      .select("brand, included, created_at")
-      .gte("created_at", since.toISOString())
-      .limit(9000);
-
-    const itemsSafe = iErr ? [] : (items ?? []);
+    const itemsSafe: any[] = [];
+    let iErr: any = null;
+    if (quoteIds.length) {
+      for (let i = 0; i < quoteIds.length; i += 250) {
+        const chunk = quoteIds.slice(i, i + 250);
+        const { data, error } = await supabaseAdmin
+          .from("quote_items")
+          .select("quote_id, brand, included")
+          .in("quote_id", chunk)
+          .limit(9000);
+        if (error) {
+          iErr = error;
+          break;
+        }
+        itemsSafe.push(...(data ?? []));
+      }
+    }
 
     const { data: orders, error: oErr } = await supabaseAdmin
       .from("orders")
@@ -127,8 +151,8 @@ export async function GET() {
       topSizes,
       topBrands,
       warnings: {
-        quote_lines: lErr ? "No se pudo leer quote_lines (o no existe created_at)." : null,
-        quote_items: iErr ? "No se pudo leer quote_items (faltan campos o permisos)." : null,
+        quote_lines: lErr ? "No se pudo leer quote_lines (permisos o esquema distinto)." : null,
+        quote_items: iErr ? "No se pudo leer quote_items (permisos o esquema distinto)." : null,
         orders: oErr ? "No se pudo leer orders." : null,
       },
     });
