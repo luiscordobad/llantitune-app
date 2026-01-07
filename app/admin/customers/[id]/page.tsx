@@ -1,23 +1,24 @@
+'use client'
 
-"use client";
+import { useState } from 'react'
+import QuoteManagePanel from '@/components/QuoteManagePanel'
 
-import { useState } from "react";
-import QuoteManagePanel from "@/app/components/QuoteManagePanel";
-
-export default function CustomerDetail() {
-  const [manageQuoteId, setManageQuoteId] = useState<string | null>(null);
+export default function CustomerDetailPage() {
+  const [manageQuoteId, setManageQuoteId] = useState<string | null>(null)
 
   return (
     <div>
-      <button className="btn" onClick={() => setManageQuoteId("demo-id")}>
-        Gestionar cotización
-      </button>
+      <h2>Detalle de cliente</h2>
 
-      <QuoteManagePanel
-        open={Boolean(manageQuoteId)}
-        quoteId={manageQuoteId}
-        onClose={() => setManageQuoteId(null)}
-      />
+      {/* Contenido del cliente aquí */}
+
+      {manageQuoteId && (
+        <QuoteManagePanel
+          open={true}
+          quoteId={manageQuoteId}
+          onClose={() => setManageQuoteId(null)}
+        />
+      )}
     </div>
-  );
+  )
 }
