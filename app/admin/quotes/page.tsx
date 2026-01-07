@@ -11,7 +11,7 @@ export default function QuotesPage() {
       id: '1',
       folio: 'Q-1001',
       client_name: 'Juan Pérez',
-      created_at: '2024-01-06',
+      created_at: '6 Ene 2024',
       lines: [
         {
           id: 'l1',
@@ -26,33 +26,37 @@ export default function QuotesPage() {
   ]
 
   return (
-    <div className="card">
+    <div style={{ maxWidth: 880, margin: '0 auto' }}>
       <h1>Cotizaciones pendientes</h1>
+      <p className="subtitle">
+        Revisa y aprueba cotizaciones antes de enviarlas al taller
+      </p>
 
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Folio</th>
-            <th>Cliente</th>
-            <th>Fecha</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {quotes.map(q => (
-            <tr key={q.id}>
-              <td>{q.folio}</td>
-              <td>{q.client_name}</td>
-              <td>{q.created_at}</td>
-              <td>
-                <button onClick={() => openModal(<QuoteManageModal quote={q} onApproved={() => {}} />)}>
-                  Gestionar
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="list">
+        {quotes.map(q => (
+          <div key={q.id} className="list-item">
+            <div>
+              <strong>{q.folio}</strong><br />
+              <span style={{ color: '#6b7280' }}>
+                {q.client_name} · {q.created_at}
+              </span>
+            </div>
+
+            <button
+              onClick={() =>
+                openModal(
+                  <QuoteManageModal
+                    quote={q}
+                    onApproved={() => {}}
+                  />
+                )
+              }
+            >
+              Gestionar
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
