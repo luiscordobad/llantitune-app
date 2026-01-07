@@ -1,86 +1,73 @@
+
 'use client'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import Modal from '@/components/ui/Modal'
+import { useModal } from '@/app/providers/ModalProvider'
 
-export default function QuoteManageModal({ quoteId, onClose }: any) {
-  const [data, setData] = useState<any>(null)
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
-  const [selectedLineId, setSelectedLineId] = useState<string | null>(null)
+interface QuoteItem {
+  id: string
+  brand: string
+  model: string
+  price: number
+  stock: number
+}
 
-  useEffect(() => {
-    fetch(`/api/quotes/details?quote_id=${quoteId}`)
-      .then(r => r.json())
-      .then(setData)
-  }, [quoteId])
+interface QuoteLine {
+  id: string
+  size: string
+  items: QuoteItem[]
+}
 
-  if (!data || !data.quote) return null
+interface Quote {
+  id: string
+  folio: string
+  client_name: string
+  lines: QuoteLine[]
+}
+
+export default function QuoteManageModal({ quote, onApproved }: { quote: Quote, onApproved: () => void }) {
+  const { closeModal } = useModal()
+  const [selected, setSelected] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(false)
+
+  function selectItem(lineId: string, itemId: string) {
+    setSelected(prev => ({ ...prev, [lineId]: itemId }))
+  }
+
+  async function approveQuote() {
+    setLoading(true)
+    onApproved()
+    closeModal()
+  }
+
+  async function cancelQuote() {
+    setLoading(true)
+    onApproved()
+    closeModal()
+  }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white p-6 w-full max-w-2xl rounded">
-        <h2 className="text-xl font-bold mb-4">
-          Cotización {data.quote.folio}
-        </h2>
-
-        {data.lines.map((line: any) => (
-          <div key={line.id} className="mb-4">
-            <p className="font-semibold">
-              {line.measure} – Cantidad {line.quantity}
-            </p>
-
-            {line.items.map((item: any) => (
-              <label key={item.quote_item_id} className="block">
-                <input
-                  type="radio"
-                  checked={selectedItemId === item.quote_item_id}
-                  onChange={() => {
-                    setSelectedItemId(item.quote_item_id)
-                    setSelectedLineId(line.id)
-                  }}
-                />
-                {' '}
-                {item.brand} {item.model} – ${item.price_each} (Stock {item.stock})
-              </label>
-            ))}
-          </div>
-        ))}
-
-        <div className="flex justify-between mt-6">
-          <button
-            className="text-red-600"
-            onClick={async () => {
-              await fetch('/api/quotes/cancel', {
-                method: 'POST',
-                body: JSON.stringify({ quote_id: data.quote.id })
-              })
-              onClose()
-            }}
-          >
-            Cancelar cotización
-          </button>
-
-          <button
-            className="bg-blue-600 text-white px-4 py-2 rounded"
-            onClick={async () => {
-              if (!selectedItemId || !selectedLineId) {
-                alert('Selecciona una llanta o cancela la cotización')
-                return
-              }
-
-              await fetch('/api/quotes/approve', {
-                method: 'POST',
-                body: JSON.stringify({
-                  quote_id: data.quote.id,
-                  line_id: selectedLineId,
-                  quote_item_id: selectedItemId
-                })
-              })
-              onClose()
-            }}
-          >
-            Aprobar y enviar a taller
-          </button>
+    <Modal onClose={closeModal}>
+      <h2>Gestionar cotización</h2>
+      <p><strong>Folio:</strong> {quote.folio}</p>
+      <p><strong>Cliente:</strong> {quote.client_name}</p>
+      <hr />
+      {quote.lines.map(line => (
+        <div key={line.id}>
+          <h4>{line.size}</h4>
+          {line.items.map(item => (
+            <label key={item.id} style={{ display:'flex', gap:12 }}>
+              <input type="radio" name={line.id} checked={selected[line.id]===item.id}
+                onChange={() => selectItem(line.id, item.id)} />
+              <span>{item.brand} {item.model} - ${item.price}</span>
+            </label>
+          ))}
         </div>
+      ))}
+      <div style={{ display:'flex', justifyContent:'flex-end', gap:12 }}>
+        <button onClick={cancelQuote} disabled={loading}>Cancelar</button>
+        <button onClick={approveQuote} disabled={loading}>Aprobar</button>
       </div>
-    </div>
+    </Modal>
   )
 }

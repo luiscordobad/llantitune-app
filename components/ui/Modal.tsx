@@ -2,13 +2,7 @@
 'use client'
 import { createPortal } from 'react-dom'
 
-export default function Modal({
-  children,
-  onClose,
-}: {
-  children: React.ReactNode
-  onClose: () => void
-}) {
+export default function Modal({ children, onClose }: { children: React.ReactNode, onClose: () => void }) {
   const root = document.getElementById('modal-root')
   if (!root) return null
 

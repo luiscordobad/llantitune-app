@@ -1,37 +1,6 @@
 
-html, body {
-  margin: 0;
-  padding: 0;
-  font-family: system-ui, sans-serif;
-}
-
-.admin-shell {
-  display: grid;
-  grid-template-columns: 240px 1fr;
-  min-height: 100vh;
-}
-
-.sidebar {
-  background: #0f172a;
-  color: white;
-  padding: 16px;
-}
-
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(15,23,42,0.55);
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.modal-card {
-  background: white;
-  border-radius: 12px;
-  width: min(900px, 95vw);
-  max-height: 90vh;
-  overflow-y: auto;
-  padding: 24px;
-}
+html, body { margin:0; font-family:system-ui }
+.admin-shell { display:grid; grid-template-columns:240px 1fr; min-height:100vh }
+.sidebar { background:#0f172a; color:white; padding:16px }
+.modal-overlay { position:fixed; inset:0; background:rgba(15,23,42,.55); display:flex; align-items:center; justify-content:center; z-index:9999 }
+.modal-card { background:white; border-radius:12px; width:min(900px,95vw); max-height:90vh; overflow:auto; padding:24px }

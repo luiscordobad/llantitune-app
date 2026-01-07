@@ -13,10 +13,7 @@ export function ModalProvider({ children }: { children: React.ReactNode }) {
   const [content, setContent] = useState<React.ReactNode | null>(null)
 
   return (
-    <ModalContext.Provider value={{
-      openModal: setContent,
-      closeModal: () => setContent(null)
-    }}>
+    <ModalContext.Provider value={{ openModal: setContent, closeModal: () => setContent(null) }}>
       {children}
       {content}
     </ModalContext.Provider>
