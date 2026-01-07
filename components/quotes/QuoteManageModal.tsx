@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 
 export default function QuoteManageModal({ quoteId, onClose }: any) {
   const [data, setData] = useState<any>(null)
-  const [selected, setSelected] = useState<any>({})
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null)
 
   useEffect(() => {
     fetch(`/api/quotes/details?quote_id=${quoteId}`)
@@ -11,7 +12,7 @@ export default function QuoteManageModal({ quoteId, onClose }: any) {
       .then(setData)
   }, [quoteId])
 
-  if (!data) return null
+  if (!data || !data.quote) return null
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -27,40 +28,50 @@ export default function QuoteManageModal({ quoteId, onClose }: any) {
             </p>
 
             {line.items.map((item: any) => (
-              <label key={item.id} className="block">
+              <label key={item.quote_item_id} className="block">
                 <input
                   type="radio"
-                  name={line.id}
-                  checked={selected[line.id] === item.id}
-                  onChange={() =>
-                    setSelected((s: any) => ({
-                      ...s,
-                      [line.id]: item.id
-                    }))
-                  }
+                  checked={selectedItemId === item.quote_item_id}
+                  onChange={() => {
+                    setSelectedItemId(item.quote_item_id)
+                    setSelectedLineId(line.id)
+                  }}
                 />
                 {' '}
-                {item.brand} {item.model} – ${item.price} (Stock {item.stock})
+                {item.brand} {item.model} – ${item.price_each} (Stock {item.stock})
               </label>
             ))}
           </div>
         ))}
 
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose}>Cancelar</button>
+        <div className="flex justify-between mt-6">
+          <button
+            className="text-red-600"
+            onClick={async () => {
+              await fetch('/api/quotes/cancel', {
+                method: 'POST',
+                body: JSON.stringify({ quote_id: data.quote.id })
+              })
+              onClose()
+            }}
+          >
+            Cancelar cotización
+          </button>
+
           <button
             className="bg-blue-600 text-white px-4 py-2 rounded"
             onClick={async () => {
+              if (!selectedItemId || !selectedLineId) {
+                alert('Selecciona una llanta o cancela la cotización')
+                return
+              }
+
               await fetch('/api/quotes/approve', {
                 method: 'POST',
                 body: JSON.stringify({
-                  quote_id: quoteId,
-                  selections: Object.entries(selected).map(
-                    ([lineId, itemId]) => ({
-                      quote_line_id: lineId,
-                      quote_item_id: itemId
-                    })
-                  )
+                  quote_id: data.quote.id,
+                  line_id: selectedLineId,
+                  quote_item_id: selectedItemId
                 })
               })
               onClose()

@@ -1,44 +1,18 @@
-# Llantitune – Cotizador (Next.js + Supabase + Vercel)
+FLUJO FINAL DE COTIZACIONES → TALLER
 
-## Qué hace
-- /admin/import: subes 3 excels (Prodynamics, Cotizador, INV), se normalizan con tus reglas y se guardan en Supabase.
-- /quote: cotizas por tamaño + cantidad, muestra opciones, genera texto para WhatsApp, borrador para email (mailto) y PDF.
+1. El vendedor marca quote_items.included = true
+2. En /admin/quotes → Gestionar:
+   - Se muestran SOLO included = true
+   - El cliente elige UNA
+3. Aprobar:
+   - Guarda selected_quote_item_id
+   - Crea orden OPEN
+4. Cancelar:
+   - Cambia status a CANCELLED
 
-## Variables de entorno (Vercel)
-Server:
-- SUPABASE_URL
-- SUPABASE_SERVICE_ROLE_KEY
-
-Client:
-- NEXT_PUBLIC_SUPABASE_URL
-- NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-## Cómo correr local (opcional)
-```bash
-npm install
-npm run dev
-```
-
-
-Note: TireID uses SHA-256 (first 12 hex) for deterministic IDs.
-
-
-## Supabase migration (multi-size quotes)
-Run `supabase_migrations/002_quote_lines.sql` in Supabase SQL Editor.
-
-
-## Supabase migration (customers + quote number)
-Run `supabase_migrations/003_customers_and_quote_no.sql` in Supabase SQL Editor.
-
-
-## Supabase migration (settings + orders + selection)
-Run `supabase_migrations/004_settings_orders_selection.sql` in Supabase SQL Editor.
-
-
-## Upgrade 1: Auth + Roles + RLS
-Run `supabase_migrations/005_auth_roles_rls.sql` in Supabase SQL Editor.
-Create users in Supabase Auth, then insert rows into `public.profiles` with role admin/mechanic.
-
-
-## Upgrade 2: CRM statuses + timeline
-Run `supabase_migrations/006_crm_status_timeline.sql` in Supabase SQL Editor.
+SUPABASE:
+- No necesitas cambiar esquema
+- Solo verificar columnas:
+  quotes.status
+  quote_lines.selected_quote_item_id
+  quote_items.included
