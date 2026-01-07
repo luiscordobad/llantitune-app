@@ -3,26 +3,14 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-export default function QuoteManageModal({
-  quoteId,
-  onClose
-}: {
-  quoteId: string
-  onClose: () => void
-}) {
+export default function QuoteManageModal({ quoteId, onClose }: { quoteId: string; onClose: () => void }) {
   const [data, setData] = useState<any>(null)
-  const [mounted, setMounted] = useState(false)
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
-  const [selectedLineId, setSelectedLineId] = useState<string | null>(null)
 
   useEffect(() => {
-    setMounted(true)
     fetch(`/api/quotes/details?quote_id=${quoteId}`)
       .then(r => r.json())
       .then(setData)
   }, [quoteId])
-
-  if (!mounted) return null
 
   return createPortal(
     <div style={overlay}>
@@ -32,53 +20,30 @@ export default function QuoteManageModal({
         {data && (
           <>
             <header style={header}>
-              <h2>Gestionar cotización {data.quote.folio}</h2>
-              <button onClick={onClose}>✕</button>
+              <div>
+                <h3>Cotización {data.quote.folio}</h3>
+                <p style={{ opacity: 0.6 }}>{data.quote.customer.name}</p>
+              </div>
+              <button onClick={onClose} style={closeBtn}>✕</button>
             </header>
 
             {data.lines.map((line: any) => (
-              <div key={line.id}>
-                <strong>{line.measure} · Cantidad {line.quantity}</strong>
-
-                {line.items.map((item: any) => (
-                  <label key={item.quote_item_id} style={option}>
-                    <input
-                      type="radio"
-                      name={line.id}
-                      checked={selectedItemId === item.quote_item_id}
-                      onChange={() => {
-                        setSelectedItemId(item.quote_item_id)
-                        setSelectedLineId(line.id)
-                      }}
-                    />
-                    {item.brand} {item.model} – ${item.price_each}
-                  </label>
-                ))}
+              <div key={line.id} style={{ marginBottom: 16 }}>
+                <b>{line.measure}</b> · Cantidad {line.quantity}
+                <div>
+                  {line.items.map((item: any) => (
+                    <label key={item.quote_item_id} style={option}>
+                      <input type="radio" name={line.id} />
+                      {item.brand} {item.model} – ${item.price_each} (Stock {item.stock})
+                    </label>
+                  ))}
+                </div>
               </div>
             ))}
 
             <footer style={footer}>
-              <button onClick={onClose}>Cerrar</button>
-              <button
-                onClick={async () => {
-                  if (!selectedItemId || !selectedLineId) {
-                    alert('Selecciona una llanta')
-                    return
-                  }
-
-                  await fetch('/api/quotes/approve', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                      quote_id: data.quote.id,
-                      line_id: selectedLineId,
-                      quote_item_id: selectedItemId
-                    })
-                  })
-                  onClose()
-                }}
-              >
-                Aprobar
-              </button>
+              <button className="btn" onClick={onClose}>Cerrar</button>
+              <button className="btn btnPrimary">Aprobar</button>
             </footer>
           </>
         )}
@@ -91,7 +56,7 @@ export default function QuoteManageModal({
 const overlay = {
   position: 'fixed',
   inset: 0,
-  background: 'rgba(0,0,0,.45)',
+  background: 'rgba(0,0,0,.5)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -102,7 +67,7 @@ const modal = {
   background: '#fff',
   borderRadius: 12,
   width: '100%',
-  maxWidth: 720,
+  maxWidth: 640,
   padding: 24
 } as const
 
@@ -112,9 +77,16 @@ const header = {
   marginBottom: 16
 } as const
 
+const closeBtn = {
+  border: 'none',
+  background: 'transparent',
+  fontSize: 18,
+  cursor: 'pointer'
+} as const
+
 const option = {
   display: 'block',
-  marginTop: 8
+  marginTop: 6
 } as const
 
 const footer = {

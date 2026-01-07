@@ -12,11 +12,7 @@ export default function QuotesPage() {
   async function search() {
     if (!query.trim()) return
     setLoading(true)
-
-    const res = await fetch(
-      `/api/admin/quotes/search?q=${encodeURIComponent(query)}`,
-      { cache: 'no-store' }
-    )
+    const res = await fetch(`/api/admin/quotes/search?q=${encodeURIComponent(query)}`, { cache: 'no-store' })
     const data = await res.json()
     setRows(data.rows ?? [])
     setLoading(false)
@@ -25,22 +21,32 @@ export default function QuotesPage() {
   return (
     <div style={{ maxWidth: 1200 }}>
       <h2>Cotizaciones</h2>
+      <p style={{ opacity: 0.6 }}>Busca por teléfono, folio, nombre o email</p>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
         <input
+          className="input"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Buscar cotización…"
           onKeyDown={(e) => e.key === 'Enter' && search()}
           style={{ flex: 1 }}
         />
-        <button onClick={search}>Buscar</button>
+        <button className="btn btnPrimary" onClick={search}>
+          Buscar
+        </button>
       </div>
+
+      {!loading && rows.length === 0 && (
+        <div style={{ padding: 40, textAlign: 'center', opacity: 0.6 }}>
+          Ingresa un teléfono, folio o nombre y presiona <b>Buscar</b>
+        </div>
+      )}
 
       {loading && <div>Cargando…</div>}
 
       {!loading && rows.length > 0 && (
-        <table>
+        <table className="table">
           <thead>
             <tr>
               <th>Fecha</th>
@@ -60,7 +66,7 @@ export default function QuotesPage() {
                 <td>{q.customer_phone}</td>
                 <td>{q.status}</td>
                 <td>
-                  <button onClick={() => setActiveQuoteId(q.quote_id)}>
+                  <button className="btn btnPrimary" onClick={() => setActiveQuoteId(q.quote_id)}>
                     Gestionar
                   </button>
                 </td>
