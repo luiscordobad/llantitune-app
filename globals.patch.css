@@ -1,0 +1,6 @@
+
+/* FIX: allow modals to escape layout */
+.appShell{
+  grid-template-columns: 1fr;
+  /* overflow: hidden;  REMOVED */
+}
