@@ -1,17 +1,13 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState } from 'react'
+import QuoteManageModal from '@/app/components/quotes/QuoteManageModal'
 
 export default function QuotesPage() {
   const [query, setQuery] = useState('')
   const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
-
-  const [activeQuote, setActiveQuote] = useState<any>(null)
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
-  const [selectedLineId, setSelectedLineId] = useState<string | null>(null)
-
-  const manageRef = useRef<HTMLDivElement | null>(null)
+  const [activeQuoteId, setActiveQuoteId] = useState<string | null>(null)
 
   async function search() {
     if (!query.trim()) return
@@ -26,59 +22,12 @@ export default function QuotesPage() {
     setLoading(false)
   }
 
-  async function manageQuote(quoteId: string) {
-    const res = await fetch(
-      `/api/quotes/details?quote_id=${quoteId}`
-    )
-    const data = await res.json()
-
-    setActiveQuote(data)
-    setSelectedItemId(null)
-    setSelectedLineId(null)
-
-    // 🔥 FORZAR SCROLL
-    setTimeout(() => {
-      manageRef.current?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start'
-      })
-    }, 100)
-  }
-
-  async function approve() {
-    if (!selectedItemId || !selectedLineId) {
-      alert('Selecciona una llanta o cancela la cotización')
-      return
-    }
-
-    await fetch('/api/quotes/approve', {
-      method: 'POST',
-      body: JSON.stringify({
-        quote_id: activeQuote.quote.id,
-        line_id: selectedLineId,
-        quote_item_id: selectedItemId
-      })
-    })
-
-    alert('Cotización aprobada y enviada a taller')
-    setActiveQuote(null)
-  }
-
-  async function cancelQuote() {
-    await fetch('/api/quotes/cancel', {
-      method: 'POST',
-      body: JSON.stringify({
-        quote_id: activeQuote.quote.id
-      })
-    })
-
-    alert('Cotización cancelada')
-    setActiveQuote(null)
-  }
-
   return (
     <div style={{ maxWidth: 1200 }}>
       <h2>Cotizaciones</h2>
+      <p style={{ opacity: 0.7 }}>
+        Busca por teléfono, folio, nombre o email
+      </p>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <input
@@ -119,7 +68,7 @@ export default function QuotesPage() {
                 <td>
                   <button
                     className="btn btnPrimary"
-                    onClick={() => manageQuote(q.quote_id)}
+                    onClick={() => setActiveQuoteId(q.quote_id)}
                   >
                     Gestionar
                   </button>
@@ -130,64 +79,11 @@ export default function QuotesPage() {
         </table>
       )}
 
-      {/* 🔥 BLOQUE DE GESTIÓN – SIEMPRE VISIBLE */}
-      {activeQuote && (
-        <div
-          ref={manageRef}
-          style={{
-            marginTop: 40,
-            padding: 24,
-            border: '3px solid #2563eb',
-            borderRadius: 12,
-            background: '#f0f7ff'
-          }}
-        >
-          <h3 style={{ marginBottom: 16 }}>
-            🔧 Gestionando cotización {activeQuote.quote.folio}
-          </h3>
-
-          {activeQuote.lines.map((line: any) => (
-            <div key={line.id} style={{ marginBottom: 16 }}>
-              <strong>
-                {line.measure} – Cantidad {line.quantity}
-              </strong>
-
-              {line.items.map((item: any) => (
-                <div key={item.quote_item_id}>
-                  <label>
-                    <input
-                      type="radio"
-                      name={line.id}
-                      checked={selectedItemId === item.quote_item_id}
-                      onChange={() => {
-                        setSelectedItemId(item.quote_item_id)
-                        setSelectedLineId(line.id)
-                      }}
-                    />{' '}
-                    {item.brand} {item.model} – ${item.price_each} (Stock {item.stock})
-                  </label>
-                </div>
-              ))}
-            </div>
-          ))}
-
-          <div style={{ display: 'flex', gap: 16 }}>
-            <button
-              className="btn"
-              style={{ background: '#dc2626', color: 'white' }}
-              onClick={cancelQuote}
-            >
-              Cancelar cotización
-            </button>
-
-            <button
-              className="btn btnPrimary"
-              onClick={approve}
-            >
-              Aprobar y enviar a taller
-            </button>
-          </div>
-        </div>
+      {activeQuoteId && (
+        <QuoteManageModal
+          quoteId={activeQuoteId}
+          onClose={() => setActiveQuoteId(null)}
+        />
       )}
     </div>
   )
