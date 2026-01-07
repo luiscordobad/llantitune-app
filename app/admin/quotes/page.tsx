@@ -1,24 +1,30 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import QuoteManageModal from "@/components/quotes/QuoteManageModal";
+import { useState } from 'react'
+import QuoteManageModal from '@/components/quotes/QuoteManageModal'
 
 export default function QuotesPage() {
-  const [query, setQuery] = useState("");
-  const [rows, setRows] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [manageQuoteId, setManageQuoteId] = useState<string | null>(null);
+  const [query, setQuery] = useState('')
+  const [rows, setRows] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [manageQuoteId, setManageQuoteId] = useState<string | null>(null)
 
   async function search() {
-    if (!query.trim()) return;
-    setLoading(true);
-    const res = await fetch(
-      `/api/admin/quotes/search?q=${encodeURIComponent(query)}`,
-      { cache: "no-store" }
-    );
-    const data = await res.json();
-    setRows(data.rows ?? []);
-    setLoading(false);
+    if (!query.trim()) return
+    setLoading(true)
+
+    try {
+      const res = await fetch(
+        `/api/admin/quotes/search?q=${encodeURIComponent(query)}`,
+        { cache: 'no-store' }
+      )
+      const data = await res.json()
+      setRows(data.rows ?? [])
+    } catch (err) {
+      console.error('Error buscando cotizaciones', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -28,13 +34,13 @@ export default function QuotesPage() {
         Busca por teléfono, folio, nombre o email
       </p>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <input
           className="input"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Buscar cotización…"
-          onKeyDown={(e) => e.key === "Enter" && search()}
+          onKeyDown={(e) => e.key === 'Enter' && search()}
           style={{ flex: 1 }}
         />
         <button className="btn btnPrimary" onClick={search}>
@@ -59,7 +65,11 @@ export default function QuotesPage() {
           <tbody>
             {rows.map((q) => (
               <tr key={q.quote_id}>
-                <td>{new Date(q.created_at).toLocaleDateString()}</td>
+                <td>
+                  {q.created_at
+                    ? new Date(q.created_at).toLocaleDateString()
+                    : '-'}
+                </td>
                 <td>{q.quote_number ?? q.quote_no}</td>
                 <td>{q.customer_name}</td>
                 <td>{q.customer_phone ?? q.customer_email}</td>
@@ -78,6 +88,7 @@ export default function QuotesPage() {
         </table>
       )}
 
+      {/* 🔥 MODAL – SOLO SE MONTA CUANDO HAY ID */}
       {manageQuoteId && (
         <QuoteManageModal
           quoteId={manageQuoteId}
@@ -85,5 +96,5 @@ export default function QuotesPage() {
         />
       )}
     </div>
-  );
+  )
 }
