@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 
 export default function QuotesPage() {
   const [query, setQuery] = useState('')
@@ -10,6 +10,8 @@ export default function QuotesPage() {
   const [activeQuote, setActiveQuote] = useState<any>(null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null)
+
+  const manageRef = useRef<HTMLDivElement | null>(null)
 
   async function search() {
     if (!query.trim()) return
@@ -25,18 +27,22 @@ export default function QuotesPage() {
   }
 
   async function manageQuote(quoteId: string) {
-    console.log('Gestionar clicked:', quoteId)
-
     const res = await fetch(
       `/api/quotes/details?quote_id=${quoteId}`
     )
     const data = await res.json()
 
-    console.log('Quote details:', data)
-
     setActiveQuote(data)
     setSelectedItemId(null)
     setSelectedLineId(null)
+
+    // 🔥 FORZAR SCROLL
+    setTimeout(() => {
+      manageRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      })
+    }, 100)
   }
 
   async function approve() {
@@ -124,23 +130,24 @@ export default function QuotesPage() {
         </table>
       )}
 
-      {/* 🔥 GESTIÓN INLINE (WORKAROUND) */}
+      {/* 🔥 BLOQUE DE GESTIÓN – SIEMPRE VISIBLE */}
       {activeQuote && (
         <div
+          ref={manageRef}
           style={{
-            marginTop: 32,
+            marginTop: 40,
             padding: 24,
-            border: '2px solid #2563eb',
-            borderRadius: 8,
-            background: '#f8fafc'
+            border: '3px solid #2563eb',
+            borderRadius: 12,
+            background: '#f0f7ff'
           }}
         >
-          <h3>
-            Gestionando cotización {activeQuote.quote.folio}
+          <h3 style={{ marginBottom: 16 }}>
+            🔧 Gestionando cotización {activeQuote.quote.folio}
           </h3>
 
           {activeQuote.lines.map((line: any) => (
-            <div key={line.id} style={{ marginTop: 16 }}>
+            <div key={line.id} style={{ marginBottom: 16 }}>
               <strong>
                 {line.measure} – Cantidad {line.quantity}
               </strong>
@@ -164,7 +171,7 @@ export default function QuotesPage() {
             </div>
           ))}
 
-          <div style={{ marginTop: 24, display: 'flex', gap: 16 }}>
+          <div style={{ display: 'flex', gap: 16 }}>
             <button
               className="btn"
               style={{ background: '#dc2626', color: 'white' }}
