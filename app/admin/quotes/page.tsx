@@ -1,8 +1,7 @@
-
 "use client";
 
 import { useState } from "react";
-import QuoteManagePanel from "@/app/components/QuoteManagePanel";
+import QuoteManageModal from "@/components/quotes/QuoteManageModal";
 
 export default function QuotesPage() {
   const [query, setQuery] = useState("");
@@ -79,11 +78,12 @@ export default function QuotesPage() {
         </table>
       )}
 
-      <QuoteManagePanel
-        open={Boolean(manageQuoteId)}
-        quoteId={manageQuoteId}
-        onClose={() => setManageQuoteId(null)}
-      />
+      {manageQuoteId && (
+        <QuoteManageModal
+          quoteId={manageQuoteId}
+          onClose={() => setManageQuoteId(null)}
+        />
+      )}
     </div>
   );
 }
