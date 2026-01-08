@@ -7,17 +7,17 @@ export default async function QuotesPage() {
 
   return (
     <div>
-      <h1>Cotizaciones en borrador</h1>
+      <h1>Cotizaciones pendientes</h1>
 
       {quotes.length === 0 && (
         <p style={{ opacity: 0.7 }}>
-          No hay cotizaciones en borrador.
+          No hay cotizaciones pendientes o no se pudieron cargar.
         </p>
       )}
 
       {quotes.map(quote => (
         <div
-          key={quote.quote_id}
+          key={quote.id}
           style={{
             display: 'flex',
             justifyContent: 'space-between',
@@ -27,14 +27,11 @@ export default async function QuotesPage() {
           }}
         >
           <div>
-            <strong>#{quote.quote_no}</strong><br />
-            <span>{quote.customer_name ?? '—'}</span><br />
-            <small>
-              {quote.vehicle_text ?? 'Vehículo no especificado'} · {quote.size ?? '—'} × {quote.quantity ?? 1}
-            </small>
+            <strong>{quote.folio ?? quote.id}</strong><br />
+            <span>{quote.client_name ?? '—'}</span>
           </div>
 
-          <Link href={`/admin/quotes/${quote.quote_id}`}>
+          <Link href={`/admin/quotes/${quote.id}`}>
             <button>Gestionar</button>
           </Link>
         </div>
