@@ -1,12 +1,12 @@
 
-FIX NEXT.JS 15 COOKIES PROMISE
+FIX SUPABASE AWAIT CLIENT
 
 PROBLEMA:
-cookies() ahora devuelve Promise<ReadonlyRequestCookies> en Next 15.
+createClient() ahora es async y devolvía Promise<SupabaseClient>.
+Se estaba usando sin await.
 
 SOLUCIÓN:
-- createClient() pasa a ser async
-- await cookies()
+const supabase = await createClient()
 
 ARCHIVO A REEMPLAZAR:
-lib/supabase/server.ts
+lib/quotes/getQuoteById.ts

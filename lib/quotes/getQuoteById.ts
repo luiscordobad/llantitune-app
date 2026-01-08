@@ -2,7 +2,7 @@
 import { createClient } from '@/lib/supabase/server'
 
 export async function getQuoteById(quoteId: string) {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   const { data, error } = await supabase
     .from('quotes')
