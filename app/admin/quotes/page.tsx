@@ -10,7 +10,9 @@ export default async function QuotesPage() {
       <h1>Cotizaciones pendientes</h1>
 
       {quotes.length === 0 && (
-        <p>No hay cotizaciones pendientes</p>
+        <p style={{ opacity: 0.7 }}>
+          No hay cotizaciones pendientes o no se pudieron cargar.
+        </p>
       )}
 
       {quotes.map(quote => (
@@ -25,8 +27,8 @@ export default async function QuotesPage() {
           }}
         >
           <div>
-            <strong>{quote.folio}</strong><br />
-            <span>{quote.client_name}</span>
+            <strong>{quote.folio ?? quote.id}</strong><br />
+            <span>{quote.client_name ?? '—'}</span>
           </div>
 
           <Link href={`/admin/quotes/${quote.id}`}>

@@ -1,20 +1,20 @@
 
-ZIP: LISTADO REAL DE COTIZACIONES
+RUNTIME FIX /admin/quotes
 
 PROBLEMA:
-El listado de /admin/quotes seguía usando dummies.
+La página fallaba en runtime por errores de Supabase (RLS, env vars, etc.).
 
 SOLUCIÓN:
-- Se agrega getPendingQuotes()
-- /admin/quotes/page.tsx ahora es Server Component
-- Trae cotizaciones reales con status PENDING
+- getPendingQuotes ya NO lanza errores (no throw)
+- Manejo defensivo: devuelve []
+- La página renderiza mensaje amigable en vez de crashear
 
-ARCHIVOS:
-1) lib/quotes/getPendingQuotes.ts
-2) app/admin/quotes/page.tsx
+ARCHIVOS A REEMPLAZAR:
+- lib/quotes/getPendingQuotes.ts
+- app/admin/quotes/page.tsx
 
-REEMPLAZAR ambos.
-
-REQUISITOS:
-- Tabla quotes con columna status
-- Valores: PENDING / APPROVED / CANCELLED
+NOTA:
+Revisa también en Supabase:
+- RLS habilitado
+- Policy de SELECT para quotes
+- Variables de entorno en Vercel
