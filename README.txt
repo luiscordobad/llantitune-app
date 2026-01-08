@@ -1,20 +1,12 @@
 
-RUNTIME FIX /admin/quotes
+FIX STATUS DRAFT
 
-PROBLEMA:
-La página fallaba en runtime por errores de Supabase (RLS, env vars, etc.).
+CAMBIO:
+- El status correcto ahora es DRAFT (no PENDING)
 
-SOLUCIÓN:
-- getPendingQuotes ya NO lanza errores (no throw)
-- Manejo defensivo: devuelve []
-- La página renderiza mensaje amigable en vez de crashear
-
-ARCHIVOS A REEMPLAZAR:
+ARCHIVOS:
 - lib/quotes/getPendingQuotes.ts
 - app/admin/quotes/page.tsx
 
-NOTA:
-Revisa también en Supabase:
-- RLS habilitado
-- Policy de SELECT para quotes
-- Variables de entorno en Vercel
+RESULTADO:
+- /admin/quotes muestra cotizaciones reales en DRAFT
