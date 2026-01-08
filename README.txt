@@ -1,12 +1,18 @@
 
-FIX STATUS DRAFT
+FIX DEFINITIVO: COLUMNAS REALES DE QUOTES
 
-CAMBIO:
-- El status correcto ahora es DRAFT (no PENDING)
+PROBLEMA:
+El código asumía columnas incorrectas (id, folio, client_name).
 
-ARCHIVOS:
+TABLA REAL:
+- quote_id (PK)
+- quote_no
+- customer_name
+
+SOLUCIÓN:
+- Ajustar SELECT a columnas reales
+- Ajustar render al esquema real
+
+ARCHIVOS A REEMPLAZAR:
 - lib/quotes/getPendingQuotes.ts
 - app/admin/quotes/page.tsx
-
-RESULTADO:
-- /admin/quotes muestra cotizaciones reales en DRAFT

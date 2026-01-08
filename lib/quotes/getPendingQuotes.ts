@@ -7,7 +7,17 @@ export async function getPendingQuotes() {
 
     const { data, error } = await supabase
       .from('quotes')
-      .select('id, folio, client_name, status, created_at')
+      .select(`
+        quote_id,
+        quote_no,
+        customer_name,
+        customer_phone,
+        vehicle_text,
+        size,
+        quantity,
+        status,
+        created_at
+      `)
       .eq('status', 'DRAFT')
       .order('created_at', { ascending: false })
 
