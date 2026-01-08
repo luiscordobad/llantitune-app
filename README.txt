@@ -1,22 +1,17 @@
 
-ZIP: DATOS REALES DE COTIZACIONES
+FIX DE SUPABASE SERVER CLIENT
 
-INCLUYE:
-1) lib/quotes/getQuoteById.ts
-   - Fetch server-side desde Supabase
-   - Trae quote, lines e items
+PROBLEMA:
+No existía el archivo:
+lib/supabase/server.ts
 
-2) app/admin/quotes/[id]/page.tsx
-   - Usa getQuoteById
-   - Renderiza datos reales
-   - Mantiene redirect al aprobar/cancelar
-
-COPIAR:
-- lib/
-- app/
-
-REEMPLAZAR ARCHIVOS EXISTENTES.
+SOLUCIÓN:
+Se agrega el client server-side oficial para Next App Router.
 
 REQUISITOS:
-- Supabase configurado en lib/supabase/server.ts
-- Tablas: quotes, quote_lines, quote_items
+- Variables de entorno:
+  NEXT_PUBLIC_SUPABASE_URL
+  NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+COPIAR:
+lib/supabase/server.ts
