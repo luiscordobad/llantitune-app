@@ -1,17 +1,12 @@
 
-FIX DE SUPABASE SERVER CLIENT
+FIX NEXT.JS 15 COOKIES PROMISE
 
 PROBLEMA:
-No existía el archivo:
-lib/supabase/server.ts
+cookies() ahora devuelve Promise<ReadonlyRequestCookies> en Next 15.
 
 SOLUCIÓN:
-Se agrega el client server-side oficial para Next App Router.
+- createClient() pasa a ser async
+- await cookies()
 
-REQUISITOS:
-- Variables de entorno:
-  NEXT_PUBLIC_SUPABASE_URL
-  NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-COPIAR:
+ARCHIVO A REEMPLAZAR:
 lib/supabase/server.ts
