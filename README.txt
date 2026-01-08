@@ -1,12 +1,20 @@
 
-FIX SUPABASE AWAIT CLIENT
+ZIP: LISTADO REAL DE COTIZACIONES
 
 PROBLEMA:
-createClient() ahora es async y devolvía Promise<SupabaseClient>.
-Se estaba usando sin await.
+El listado de /admin/quotes seguía usando dummies.
 
 SOLUCIÓN:
-const supabase = await createClient()
+- Se agrega getPendingQuotes()
+- /admin/quotes/page.tsx ahora es Server Component
+- Trae cotizaciones reales con status PENDING
 
-ARCHIVO A REEMPLAZAR:
-lib/quotes/getQuoteById.ts
+ARCHIVOS:
+1) lib/quotes/getPendingQuotes.ts
+2) app/admin/quotes/page.tsx
+
+REEMPLAZAR ambos.
+
+REQUISITOS:
+- Tabla quotes con columna status
+- Valores: PENDING / APPROVED / CANCELLED

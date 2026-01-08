@@ -1,23 +1,17 @@
 
 import Link from 'next/link'
+import { getPendingQuotes } from '@/lib/quotes/getPendingQuotes'
 
-export default function QuotesPage() {
-  const quotes = [
-    {
-      id: 'Q-1001',
-      client_name: 'Juan Pérez',
-      status: 'PENDING',
-    },
-    {
-      id: 'Q-1002',
-      client_name: 'María López',
-      status: 'PENDING',
-    },
-  ]
+export default async function QuotesPage() {
+  const quotes = await getPendingQuotes()
 
   return (
     <div>
-      <h1>Cotizaciones</h1>
+      <h1>Cotizaciones pendientes</h1>
+
+      {quotes.length === 0 && (
+        <p>No hay cotizaciones pendientes</p>
+      )}
 
       {quotes.map(quote => (
         <div
@@ -31,7 +25,7 @@ export default function QuotesPage() {
           }}
         >
           <div>
-            <strong>{quote.id}</strong><br />
+            <strong>{quote.folio}</strong><br />
             <span>{quote.client_name}</span>
           </div>
 
