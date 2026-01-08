@@ -1,14 +1,22 @@
 
-FIX DEFINITIVO NEXT.JS 15 PARAMS
+ZIP: DATOS REALES DE COTIZACIONES
 
-PROBLEMA:
-Next.js 15 tipa params como Promise en PageProps generados.
+INCLUYE:
+1) lib/quotes/getQuoteById.ts
+   - Fetch server-side desde Supabase
+   - Trae quote, lines e items
 
-SOLUCIÓN:
-- params se tipa como Promise<{ id: string }>
-- Se hace await params dentro del page
+2) app/admin/quotes/[id]/page.tsx
+   - Usa getQuoteById
+   - Renderiza datos reales
+   - Mantiene redirect al aprobar/cancelar
 
-ESTE ARCHIVO:
-- app/admin/quotes/[id]/page.tsx
+COPIAR:
+- lib/
+- app/
 
-REEMPLAZA EL ARCHIVO Y VUELVE A BUILD.
+REEMPLAZAR ARCHIVOS EXISTENTES.
+
+REQUISITOS:
+- Supabase configurado en lib/supabase/server.ts
+- Tablas: quotes, quote_lines, quote_items
