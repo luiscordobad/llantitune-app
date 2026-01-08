@@ -1,20 +1,13 @@
 
-ESTE ZIP CONTIENE TODO LO NECESARIO PARA CAMBIAR EL FLUJO A PAGINA (SIN POPUPS)
+FIX DE TIPADO NEXT.JS APP ROUTER
 
-ARCHIVOS:
-1) app/admin/quotes/page.tsx
-   - Reemplaza tu pagina de listado
-   - Boton Gestionar navega a /admin/quotes/[id]
+PROBLEMA:
+Next 15 espera que los Page Components sean async y usen PageProps correctamente.
 
-2) app/admin/quotes/[id]/page.tsx
-   - Nueva pagina para gestionar cotizacion
-   - Al aprobar o cancelar regresa a /admin/quotes
+SOLUCIÓN:
+- page.tsx ahora es async
+- Interface PageProps cumple el contrato esperado
+- Ya no hay conflicto con Promise<any>
 
-PASOS:
-- Copia la carpeta app/ del ZIP a tu proyecto
-- Reemplaza archivos existentes cuando te lo pida
-- Ejecuta build
-
-RESULTADO:
-- Click en Gestionar navega a nueva pagina
-- Aprobar / Cancelar regresan correctamente
+SOLO REEMPLAZA:
+app/admin/quotes/[id]/page.tsx

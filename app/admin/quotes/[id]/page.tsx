@@ -1,13 +1,13 @@
 
 import { redirect } from 'next/navigation'
 
-interface Props {
+interface PageProps {
   params: {
     id: string
   }
 }
 
-export default function QuoteManagePage({ params }: Props) {
+export default async function QuoteManagePage({ params }: PageProps) {
   const quoteId = params.id
 
   async function approveQuote() {
