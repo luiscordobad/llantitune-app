@@ -1,13 +1,14 @@
 
-FIX DE TIPADO NEXT.JS APP ROUTER
+FIX DEFINITIVO NEXT.JS 15 PARAMS
 
 PROBLEMA:
-Next 15 espera que los Page Components sean async y usen PageProps correctamente.
+Next.js 15 tipa params como Promise en PageProps generados.
 
 SOLUCIÓN:
-- page.tsx ahora es async
-- Interface PageProps cumple el contrato esperado
-- Ya no hay conflicto con Promise<any>
+- params se tipa como Promise<{ id: string }>
+- Se hace await params dentro del page
 
-SOLO REEMPLAZA:
-app/admin/quotes/[id]/page.tsx
+ESTE ARCHIVO:
+- app/admin/quotes/[id]/page.tsx
+
+REEMPLAZA EL ARCHIVO Y VUELVE A BUILD.

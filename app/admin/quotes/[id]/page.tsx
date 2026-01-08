@@ -1,14 +1,14 @@
 
 import { redirect } from 'next/navigation'
 
-interface PageProps {
-  params: {
+type PageProps = {
+  params: Promise<{
     id: string
-  }
+  }>
 }
 
 export default async function QuoteManagePage({ params }: PageProps) {
-  const quoteId = params.id
+  const { id: quoteId } = await params
 
   async function approveQuote() {
     'use server'
