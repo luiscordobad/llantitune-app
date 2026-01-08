@@ -11,7 +11,7 @@ export default function QuotesPage() {
       id: '1',
       folio: 'Q-1001',
       client_name: 'Juan Pérez',
-      created_at: '6 Ene 2024',
+      created_at: '2024-01-06',
       lines: [
         {
           id: 'l1',
@@ -26,32 +26,16 @@ export default function QuotesPage() {
   ]
 
   return (
-    <div style={{ maxWidth: 880, margin: '0 auto' }}>
-      <h1>Cotizaciones pendientes</h1>
-      <p className="subtitle">
-        Revisa y aprueba cotizaciones antes de enviarlas al taller
-      </p>
-
-      <div className="list">
+    <div className="container">
+      <h1>Cotizaciones</h1>
+      <div className="card">
         {quotes.map(q => (
-          <div key={q.id} className="list-item">
+          <div key={q.id} className="row">
             <div>
               <strong>{q.folio}</strong><br />
-              <span style={{ color: '#6b7280' }}>
-                {q.client_name} · {q.created_at}
-              </span>
+              <span>{q.client_name}</span>
             </div>
-
-            <button
-              onClick={() =>
-                openModal(
-                  <QuoteManageModal
-                    quote={q}
-                    onApproved={() => {}}
-                  />
-                )
-              }
-            >
+            <button onClick={() => openModal(<QuoteManageModal quote={q} />)}>
               Gestionar
             </button>
           </div>
