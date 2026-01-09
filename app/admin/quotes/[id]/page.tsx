@@ -7,7 +7,7 @@ interface PageProps {
 
 export default async function QuoteDetailPage({ params }: PageProps) {
   const { id } = await params
-  const supabase = createClient()
+  const supabase = await createClient() // ✅ FIX CLAVE
 
   // 1️⃣ Obtener cotización
   const { data: quote } = await supabase
@@ -32,7 +32,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
   async function selectItem(formData: FormData) {
     'use server'
     const selectedId = formData.get('selected_item') as string
-    const supabase = createClient()
+    const supabase = await createClient() // ✅ FIX TAMBIÉN AQUÍ
 
     await supabase
       .from('quotes')
@@ -42,10 +42,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <a
-        href="/admin/quotes"
-        className="text-sm text-muted hover:underline"
-      >
+      <a href="/admin/quotes" className="text-sm text-muted hover:underline">
         ← Volver a cotizaciones
       </a>
 
