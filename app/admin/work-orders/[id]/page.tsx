@@ -14,6 +14,7 @@ export default async function WorkOrderDetailPage({ params }: PageProps) {
       id,
       status,
       created_at,
+      quote_id,
       quotes (
         quote_no,
         customer_name,
@@ -24,12 +25,16 @@ export default async function WorkOrderDetailPage({ params }: PageProps) {
     .eq('id', id)
     .single()
 
-  const { data: item } = await supabase
-    .from('quote_items')
-    .select('*')
-    .eq('quote_id', order?.quote_id)
-    .eq('included', true)
-    .single()
+  const quoteId = order?.quote_id
+
+  const { data: item } = quoteId
+    ? await supabase
+        .from('quote_items')
+        .select('*')
+        .eq('quote_id', quoteId)
+        .eq('included', true)
+        .single()
+    : { data: null }
 
   return (
     <div style={{ maxWidth: 800, margin: '0 auto' }}>
