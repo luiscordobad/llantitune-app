@@ -25,13 +25,13 @@ export default async function WorkOrderDetailPage({ params }: PageProps) {
     .eq('id', id)
     .single()
 
-  const quoteId = order?.quote_id
+  const quote = Array.isArray(order?.quotes) ? order?.quotes[0] : order?.quotes
 
-  const { data: item } = quoteId
+  const { data: item } = quote
     ? await supabase
         .from('quote_items')
         .select('*')
-        .eq('quote_id', quoteId)
+        .eq('quote_id', order.quote_id)
         .eq('included', true)
         .single()
     : { data: null }
@@ -41,11 +41,11 @@ export default async function WorkOrderDetailPage({ params }: PageProps) {
       <h1>Orden de trabajo</h1>
 
       <h2>Cliente</h2>
-      <p>{order?.quotes?.customer_name}</p>
-      <p>{order?.quotes?.customer_phone}</p>
+      <p>{quote?.customer_name ?? '-'}</p>
+      <p>{quote?.customer_phone ?? '-'}</p>
 
       <h2>Vehículo</h2>
-      <p>{order?.quotes?.vehicle_text}</p>
+      <p>{quote?.vehicle_text ?? '-'}</p>
 
       <h2>Llanta seleccionada</h2>
       {item ? (
