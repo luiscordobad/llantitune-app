@@ -1,14 +1,17 @@
 
-PASO 2 — FIX NEXT.JS 15 (params async)
+PASO 3 — APROBAR / CANCELAR COTIZACIÓN
 
-PROBLEMA:
-Next 15 tipa params como Promise.
-
-SOLUCIÓN:
-export default async function Page({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-}
+OBJETIVO:
+- Aprobar o cancelar cotización DRAFT
+- Cambia status en BD
+- Redirige a /admin/quotes
+- Desaparece del listado
 
 ARCHIVOS:
-- lib/quotes/getQuoteById.ts
+- lib/quotes/updateQuoteStatus.ts
 - app/admin/quotes/[id]/page.tsx
+
+CHECKPOINT:
+- Click Aprobar -> status APPROVED
+- Click Cancelar -> status CANCELLED
+- Redirect correcto
