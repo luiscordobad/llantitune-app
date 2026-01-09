@@ -2,6 +2,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { selectQuoteItem } from '@/lib/quotes/selectQuoteItem'
+import { markQuoteSent } from '@/lib/quotes/markQuoteSent'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -11,6 +12,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
   const { id } = await params
   const supabase = await createClient()
 
+  // Quote header
   const { data: quote } = await supabase
     .from('quotes')
     .select('*')
@@ -19,10 +21,17 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
   if (!quote) notFound()
 
+  const isDraft = quote.status === 'DRAFT'
   const isSent = quote.status === 'SENT'
-  const isApproved = quote.status === 'APPROVED'
-  const isCancelled = quote.status === 'CANCELLED'
 
+  // Quote line (vehicle + size)
+  const { data: line } = await supabase
+    .from('quote_lines')
+    .select('*')
+    .eq('quote_id', id)
+    .single()
+
+  // Items
   const { data: rawItems } = await supabase
     .from('quote_items')
     .select('*')
@@ -34,6 +43,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
   async function handleSelect(formData: FormData) {
     'use server'
+    if (!isSent) return
     const selected = formData.get('selected_item') as string | null
     if (!selected) return
     await selectQuoteItem(id, selected)
@@ -51,24 +61,28 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
       <div style={{ marginTop: 12, fontSize: 14, lineHeight: 1.6 }}>
         <p><strong>Status:</strong> {quote.status}</p>
+
         {quote.sent_at && (
           <p>
             <strong>Enviada:</strong>{' '}
             {new Date(quote.sent_at).toLocaleString()}
           </p>
         )}
+
         <p><strong>Cliente:</strong> {quote.customer_name ?? '—'}</p>
         <p><strong>Teléfono:</strong> {quote.customer_phone ?? '—'}</p>
+
         <p>
           <strong>Vehículo:</strong>{' '}
-          {[
-            quote.vehicle_make,
-            quote.vehicle_model,
-            quote.vehicle_year,
-          ].filter(Boolean).join(' ') || '—'}
+          {line
+            ? [line.vehicle_make, line.vehicle_model, line.vehicle_year]
+                .filter(Boolean)
+                .join(' ')
+            : '—'}
         </p>
-        <p><strong>Medida:</strong> {quote.size ?? '—'}</p>
-        <p><strong>Cantidad:</strong> {quote.quantity ?? '—'}</p>
+
+        <p><strong>Medida:</strong> {line?.size ?? '—'}</p>
+        <p><strong>Cantidad:</strong> {line?.quantity ?? '—'}</p>
       </div>
 
       <h2 style={{ marginTop: 32, fontSize: 18 }}>
@@ -142,10 +156,22 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         </form>
       )}
 
-      {(isApproved || isCancelled) && (
-        <p style={{ marginTop: 24, color: '#666' }}>
-          Esta cotización ya no se puede modificar.
-        </p>
+      {isDraft && (
+        <form action={markQuoteSent.bind(null, quote.quote_id)}>
+          <button
+            style={{
+              marginTop: 24,
+              padding: '10px 18px',
+              borderRadius: 6,
+              border: 'none',
+              background: '#2563eb',
+              color: 'white',
+              cursor: 'pointer',
+            }}
+          >
+            Enviar cotización al cliente
+          </button>
+        </form>
       )}
     </div>
   )

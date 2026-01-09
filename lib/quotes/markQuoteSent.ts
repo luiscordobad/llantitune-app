@@ -17,7 +17,7 @@ export async function markQuoteSent(quoteId: string) {
     .eq('status', 'DRAFT')
 
   if (error) {
-    throw new Error('No se pudo marcar la cotización como enviada')
+    throw new Error('No se pudo enviar la cotización')
   }
 
   redirect('/admin/quotes')

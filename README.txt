@@ -1,14 +1,11 @@
 
-PASO 6 (REDEFINIDO) — SELECCIÓN DE LLANTA EN SENT
+PASO 6.1 — DRAFT ACTIVO + JOIN quote_lines
 
-✔ SENT es editable
-✔ Aquí se selecciona la llanta
-✔ Se muestran datos del vehículo
-✔ Se muestra cuándo fue enviada la cotización
-✔ NO aprueba
-✔ NO cancela
-✔ NO crea orden
+Cambios:
+- DRAFT ahora muestra botón "Enviar cotización"
+- SENT sigue siendo editable para selección
+- Se leen datos reales del vehículo desde quote_lines
 
-Archivos incluidos:
-- lib/quotes/selectQuoteItem.ts
+Archivos:
+- lib/quotes/markQuoteSent.ts
 - app/admin/quotes/[id]/page.tsx
