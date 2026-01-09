@@ -31,7 +31,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     const selected = formData.get('selected_item') as string | null
     if (!selected) return
     await selectQuoteItem(id, selected)
-    redirect(`/admin/quotes/${id}`)
+    redirect(`/admin/quotes/${id}/approve`)
   }
 
   return (
@@ -40,19 +40,19 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
       <form action={saveSelection}>
         {items?.map(item => (
-          <label key={item.quote_item_id} style={{ display: 'block', marginBottom: 12 }}>
+          <label key={item.quote_item_id} style={{ display: 'block', marginBottom: 12, opacity: hasSelectedItem && !item.included ? 0.5 : 1 }}>
             <input
               type="radio"
               name="selected_item"
               value={item.quote_item_id}
               defaultChecked={item.included === true}
-              disabled={!isSent}
+              disabled={!isSent || (hasSelectedItem && !item.included)}
             />
             {item.brand} {item.model} — ${item.total_with_services}
           </label>
         ))}
 
-        {isSent && (
+        {isSent && !hasSelectedItem && (
           <button type="submit" style={{ marginTop: 16 }}>
             Guardar selección
           </button>
@@ -60,11 +60,9 @@ export default async function QuoteDetailPage({ params }: PageProps) {
       </form>
 
       {isSent && hasSelectedItem && (
-        <form action={`/admin/quotes/${id}/approve`} method="post">
-          <button style={{ marginTop: 24 }}>
-            Aprobar cotización
-          </button>
-        </form>
+        <p style={{ marginTop: 16, color: '#555' }}>
+          Llanta seleccionada. Continúa para aprobar la cotización.
+        </p>
       )}
     </div>
   )
