@@ -2,12 +2,11 @@
 import Link from 'next/link'
 import { getQuoteById } from '@/lib/quotes/getQuoteById'
 
-type PageProps = {
-  params: { id: string }
-}
-
-export default async function QuoteDetailPage({ params }: PageProps) {
-  const quote = await getQuoteById(params.id)
+export default async function QuoteDetailPage(
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  const quote = await getQuoteById(id)
 
   return (
     <div style={{ maxWidth: 900 }}>
