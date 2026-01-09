@@ -7,7 +7,7 @@ interface PageProps {
 
 export default async function QuoteDetailPage({ params }: PageProps) {
   const { id } = await params
-  const supabase = await createClient() // ✅ FIX CLAVE
+  const supabase = await createClient()
 
   // 1️⃣ Obtener cotización
   const { data: quote } = await supabase
@@ -28,11 +28,14 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     .eq('included', true)
     .order('rank')
 
-  // 3️⃣ Action para seleccionar llanta
+  // 3️⃣ Action: guardar llanta seleccionada
   async function selectItem(formData: FormData) {
     'use server'
-    const selectedId = formData.get('selected_item') as string
-    const supabase = await createClient() // ✅ FIX TAMBIÉN AQUÍ
+
+    const selectedId = formData.get('selected_item') as string | null
+    if (!selectedId) return
+
+    const supabase = await createClient()
 
     await supabase
       .from('quotes')
@@ -41,76 +44,89 @@ export default async function QuoteDetailPage({ params }: PageProps) {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <a href="/admin/quotes" className="text-sm text-muted hover:underline">
+    <div style={{ maxWidth: 900, margin: '0 auto' }}>
+      <a
+        href="/admin/quotes"
+        style={{ fontSize: 14, color: '#666', textDecoration: 'none' }}
+      >
         ← Volver a cotizaciones
       </a>
 
-      <div>
-        <h1 className="text-2xl font-semibold">
-          Cotización #{quote.quote_no}
-        </h1>
-        <p className="text-sm text-muted">
-          Cliente: {quote.customer_name || '—'}
-        </p>
-        <p className="text-sm text-muted">
-          Status: {quote.status}
-        </p>
+      <h1 style={{ fontSize: 24, marginTop: 16 }}>
+        Cotización #{quote.quote_no ?? '—'}
+      </h1>
+
+      <div style={{ marginTop: 12, fontSize: 14 }}>
+        <p><strong>Cliente:</strong> {quote.customer_name ?? '—'}</p>
+        <p><strong>Status:</strong> {quote.status}</p>
       </div>
 
-      <section>
-        <h2 className="text-lg font-medium mb-3">
-          Seleccionar llanta
-        </h2>
+      <h2 style={{ marginTop: 32, fontSize: 18 }}>
+        Seleccionar llanta
+      </h2>
 
-        {items.length === 0 ? (
-          <p className="text-sm text-muted">
-            No hay opciones disponibles.
-          </p>
-        ) : (
-          <form action={selectItem} className="space-y-3">
-            {items.map(item => (
-              <label
-                key={item.quote_item_id}
-                className="block border rounded p-4 cursor-pointer hover:bg-muted"
-              >
-                <div className="flex gap-3 items-start">
-                  <input
-                    type="radio"
-                    name="selected_item"
-                    value={item.quote_item_id}
-                    defaultChecked={
-                      quote.selected_quote_item_id === item.quote_item_id
-                    }
-                  />
+      {items.length === 0 ? (
+        <p style={{ marginTop: 12, color: '#777' }}>
+          No hay opciones disponibles.
+        </p>
+      ) : (
+        <form action={selectItem} style={{ marginTop: 16 }}>
+          {items.map(item => (
+            <label
+              key={item.quote_item_id}
+              style={{
+                display: 'block',
+                border: '1px solid #e5e7eb',
+                borderRadius: 6,
+                padding: 12,
+                marginBottom: 12,
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{ display: 'flex', gap: 12 }}>
+                <input
+                  type="radio"
+                  name="selected_item"
+                  value={item.quote_item_id}
+                  defaultChecked={
+                    quote.selected_quote_item_id === item.quote_item_id
+                  }
+                />
 
-                  <div className="flex-1">
-                    <p className="font-medium">
-                      {item.brand} – {item.model}
-                    </p>
-                    <p className="text-sm text-muted">
-                      {item.size} · {item.load_speed}
-                    </p>
-                    <p className="text-sm">
-                      Total:{' '}
-                      <strong>
-                        ${item.total_with_services.toLocaleString()}
-                      </strong>
-                    </p>
+                <div>
+                  <div style={{ fontWeight: 600 }}>
+                    {item.brand} – {item.model}
+                  </div>
+                  <div style={{ fontSize: 13, color: '#555' }}>
+                    {item.size} · {item.load_speed}
+                  </div>
+                  <div style={{ marginTop: 4 }}>
+                    Total:{' '}
+                    <strong>
+                      ${Number(item.total_with_services).toLocaleString()}
+                    </strong>
                   </div>
                 </div>
-              </label>
-            ))}
+              </div>
+            </label>
+          ))}
 
-            <button
-              type="submit"
-              className="mt-4 px-4 py-2 rounded bg-black text-white text-sm"
-            >
-              Guardar selección
-            </button>
-          </form>
-        )}
-      </section>
+          <button
+            type="submit"
+            style={{
+              marginTop: 16,
+              padding: '10px 16px',
+              borderRadius: 6,
+              border: 'none',
+              background: '#111',
+              color: 'white',
+              cursor: 'pointer',
+            }}
+          >
+            Guardar selección
+          </button>
+        </form>
+      )}
     </div>
   )
 }
