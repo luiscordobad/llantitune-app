@@ -34,18 +34,24 @@ export default async function WorkOrdersPage() {
             </tr>
           </thead>
           <tbody>
-            {orders.map(order => (
-              <tr key={order.id}>
-                <td>
-                  <Link href={`/admin/work-orders/${order.id}`}>
-                    {order.id.slice(0, 8)}
-                  </Link>
-                </td>
-                <td>{order.quotes?.customer_name}</td>
-                <td>{order.status}</td>
-                <td>{new Date(order.created_at).toLocaleDateString()}</td>
-              </tr>
-            ))}
+            {orders.map(order => {
+              const quote = Array.isArray(order.quotes)
+                ? order.quotes[0]
+                : order.quotes
+
+              return (
+                <tr key={order.id}>
+                  <td>
+                    <Link href={`/admin/work-orders/${order.id}`}>
+                      {order.id.slice(0, 8)}
+                    </Link>
+                  </td>
+                  <td>{quote?.customer_name ?? '-'}</td>
+                  <td>{order.status}</td>
+                  <td>{new Date(order.created_at).toLocaleDateString()}</td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       )}
