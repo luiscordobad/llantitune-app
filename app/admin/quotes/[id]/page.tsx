@@ -1,5 +1,7 @@
+
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { markQuoteSent } from '@/lib/quotes/markQuoteSent'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -9,18 +11,16 @@ export default async function QuoteDetailPage({ params }: PageProps) {
   const { id } = await params
   const supabase = await createClient()
 
-  // 1️⃣ Obtener cotización
   const { data: quote } = await supabase
     .from('quotes')
     .select('*')
     .eq('quote_id', id)
     .single()
 
-  if (!quote) {
-    notFound()
-  }
+  if (!quote) notFound()
 
-  // 2️⃣ Obtener llantas (RAW)
+  const isDraft = quote.status === 'DRAFT'
+
   const { data: rawItems } = await supabase
     .from('quote_items')
     .select('*')
@@ -28,18 +28,16 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     .eq('included', true)
     .order('rank')
 
-  // ✅ NORMALIZACIÓN (CLAVE PARA TS)
   const items = rawItems ?? []
 
-  // 3️⃣ Action: guardar llanta seleccionada
-  async function selectItem(formData: FormData) {
+  async function saveSelection(formData: FormData) {
     'use server'
+    if (!isDraft) return
 
     const selectedId = formData.get('selected_item') as string | null
     if (!selectedId) return
 
     const supabase = await createClient()
-
     await supabase
       .from('quotes')
       .update({ selected_quote_item_id: selectedId })
@@ -48,10 +46,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto' }}>
-      <a
-        href="/admin/quotes"
-        style={{ fontSize: 14, color: '#666', textDecoration: 'none' }}
-      >
+      <a href="/admin/quotes" style={{ fontSize: 14, color: '#666' }}>
         ← Volver a cotizaciones
       </a>
 
@@ -65,7 +60,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
       </div>
 
       <h2 style={{ marginTop: 32, fontSize: 18 }}>
-        Seleccionar llanta
+        Opciones cotizadas
       </h2>
 
       {items.length === 0 ? (
@@ -73,7 +68,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
           No hay opciones disponibles.
         </p>
       ) : (
-        <form action={selectItem} style={{ marginTop: 16 }}>
+        <form action={saveSelection} style={{ marginTop: 16 }}>
           {items.map(item => (
             <label
               key={item.quote_item_id}
@@ -83,7 +78,8 @@ export default async function QuoteDetailPage({ params }: PageProps) {
                 borderRadius: 6,
                 padding: 12,
                 marginBottom: 12,
-                cursor: 'pointer',
+                cursor: isDraft ? 'pointer' : 'default',
+                opacity: isDraft ? 1 : 0.6,
               }}
             >
               <div style={{ display: 'flex', gap: 12 }}>
@@ -94,6 +90,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
                   defaultChecked={
                     quote.selected_quote_item_id === item.quote_item_id
                   }
+                  disabled={!isDraft}
                 />
 
                 <div>
@@ -114,19 +111,39 @@ export default async function QuoteDetailPage({ params }: PageProps) {
             </label>
           ))}
 
+          {isDraft && (
+            <button
+              type="submit"
+              style={{
+                marginTop: 16,
+                padding: '10px 16px',
+                borderRadius: 6,
+                border: 'none',
+                background: '#111',
+                color: 'white',
+                cursor: 'pointer',
+              }}
+            >
+              Guardar selección
+            </button>
+          )}
+        </form>
+      )}
+
+      {isDraft && (
+        <form action={markQuoteSent.bind(null, quote.quote_id)}>
           <button
-            type="submit"
             style={{
-              marginTop: 16,
+              marginTop: 24,
               padding: '10px 16px',
               borderRadius: 6,
               border: 'none',
-              background: '#111',
+              background: '#2563eb',
               color: 'white',
               cursor: 'pointer',
             }}
           >
-            Guardar selección
+            Marcar como enviada
           </button>
         </form>
       )}

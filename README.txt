@@ -1,12 +1,17 @@
 
-PASO 5 — ENVIAR COTIZACIÓN Y BLOQUEAR EDICIÓN
+PASO 6 — ENVIAR COTIZACIÓN AL CLIENTE (DRAFT -> SENT)
 
-OBJETIVO:
-- Enviar cotización (DRAFT -> SENT)
+Este paso:
+- NO aprueba
+- NO crea orden
+- Solo marca la cotización como enviada
+
+Incluye:
+- Guardar selected_quote_item_id (opcional)
+- Cambiar status a SENT
 - Guardar sent_at
-- Bloquear selección de llanta cuando no es DRAFT
-- Redirigir a /admin/quotes
+- Bloquear edición después de enviar
 
-ARCHIVOS:
-- lib/quotes/sendQuote.ts
+Archivos:
+- lib/quotes/markQuoteSent.ts
 - app/admin/quotes/[id]/page.tsx
