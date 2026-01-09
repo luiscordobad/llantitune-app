@@ -2,21 +2,19 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
 
-export async function selectQuoteItem(quoteId: string, quoteItemId: string) {
+export async function selectQuoteItem(quoteId: string, itemId: string) {
   const supabase = await createClient()
 
   const { error } = await supabase
     .from('quotes')
     .update({
-      selected_quote_item_id: quoteItemId,
+      selected_quote_item_id: itemId,
     })
     .eq('quote_id', quoteId)
+    .eq('status', 'SENT')
 
   if (error) {
-    throw new Error('No se pudo seleccionar la llanta')
+    throw new Error('No se pudo guardar la selección de llanta')
   }
-
-  redirect(`/admin/quotes/${quoteId}`)
 }

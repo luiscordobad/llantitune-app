@@ -1,17 +1,14 @@
 
-PASO 6 — ENVIAR COTIZACIÓN AL CLIENTE (DRAFT -> SENT)
+PASO 6 (REDEFINIDO) — SELECCIÓN DE LLANTA EN SENT
 
-Este paso:
-- NO aprueba
-- NO crea orden
-- Solo marca la cotización como enviada
+✔ SENT es editable
+✔ Aquí se selecciona la llanta
+✔ Se muestran datos del vehículo
+✔ Se muestra cuándo fue enviada la cotización
+✔ NO aprueba
+✔ NO cancela
+✔ NO crea orden
 
-Incluye:
-- Guardar selected_quote_item_id (opcional)
-- Cambiar status a SENT
-- Guardar sent_at
-- Bloquear edición después de enviar
-
-Archivos:
-- lib/quotes/markQuoteSent.ts
+Archivos incluidos:
+- lib/quotes/selectQuoteItem.ts
 - app/admin/quotes/[id]/page.tsx
