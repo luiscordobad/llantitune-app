@@ -1,12 +1,12 @@
 
-PASO 4 — FIX DE TIPOS
+PASO 5 — ENVIAR COTIZACIÓN Y BLOQUEAR EDICIÓN
 
-PROBLEMA:
-selected_quote_item_id existía en BD pero no en el tipo QuoteDetail.
+OBJETIVO:
+- Enviar cotización (DRAFT -> SENT)
+- Guardar sent_at
+- Bloquear selección de llanta cuando no es DRAFT
+- Redirigir a /admin/quotes
 
-SOLUCIÓN:
-- Agregar selected_quote_item_id al tipo
-- Agregarlo al select de Supabase
-
-ARCHIVO A REEMPLAZAR:
-- lib/quotes/getQuoteById.ts
+ARCHIVOS:
+- lib/quotes/sendQuote.ts
+- app/admin/quotes/[id]/page.tsx

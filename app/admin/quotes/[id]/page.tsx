@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { getQuoteById } from '@/lib/quotes/getQuoteById'
 import { getQuoteItemsByQuoteId } from '@/lib/quotes/getQuoteItemsByQuoteId'
 import { selectQuoteItem } from '@/lib/quotes/selectQuoteItem'
+import { sendQuote } from '@/lib/quotes/sendQuote'
 
 export default async function QuoteDetailPage(
   { params }: { params: Promise<{ id: string }> }
@@ -10,6 +11,8 @@ export default async function QuoteDetailPage(
   const { id } = await params
   const quote = await getQuoteById(id)
   const items = await getQuoteItemsByQuoteId(id)
+
+  const isDraft = quote.status === 'DRAFT'
 
   return (
     <div style={{ maxWidth: 900 }}>
@@ -42,6 +45,7 @@ export default async function QuoteDetailPage(
               gap: 12,
               padding: '8px 0',
               borderBottom: '1px solid #e5e7eb',
+              opacity: isDraft ? 1 : 0.6,
             }}
           >
             <input
@@ -49,7 +53,12 @@ export default async function QuoteDetailPage(
               name="quoteItem"
               value={item.id}
               defaultChecked={quote.selected_quote_item_id === item.id}
-              formAction={selectQuoteItem.bind(null, id, item.id)}
+              disabled={!isDraft}
+              formAction={
+                isDraft
+                  ? selectQuoteItem.bind(null, id, item.id)
+                  : undefined
+              }
             />
             <div>
               <strong>{item.brand} {item.model}</strong><br />
@@ -60,6 +69,23 @@ export default async function QuoteDetailPage(
           </label>
         ))}
       </form>
+
+      {isDraft && (
+        <form action={sendQuote.bind(null, quote.quote_id)} style={{ marginTop: 24 }}>
+          <button
+            style={{
+              padding: '10px 16px',
+              borderRadius: 6,
+              border: 'none',
+              background: '#16a34a',
+              color: 'white',
+              cursor: 'pointer',
+            }}
+          >
+            Enviar cotización
+          </button>
+        </form>
+      )}
     </div>
   )
 }
