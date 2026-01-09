@@ -1,17 +1,14 @@
 
-PASO 3 — APROBAR / CANCELAR COTIZACIÓN
+PASO 1B — MOSTRAR DRAFT + SENT
 
-OBJETIVO:
-- Aprobar o cancelar cotización DRAFT
-- Cambia status en BD
-- Redirige a /admin/quotes
-- Desaparece del listado
+CAMBIO:
+- Ahora /admin/quotes muestra:
+  - Borrador (DRAFT)
+  - Enviadas (SENT)
 
 ARCHIVOS:
-- lib/quotes/updateQuoteStatus.ts
-- app/admin/quotes/[id]/page.tsx
+- lib/quotes/getQuotesDraftAndSent.ts
+- app/admin/quotes/page.tsx
 
-CHECKPOINT:
-- Click Aprobar -> status APPROVED
-- Click Cancelar -> status CANCELLED
-- Redirect correcto
+NOTA:
+- APPROVED y CANCELLED NO se muestran aquí
