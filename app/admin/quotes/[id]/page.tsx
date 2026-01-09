@@ -1,13 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
 import { selectQuoteItem } from '@/lib/quotes/selectQuoteItem'
 
-export default async function QuoteDetailPage({
-  params,
-}: {
-  params: { id: string }
-}) {
+interface PageProps {
+  params: Promise<{ id: string }>
+}
+
+export default async function QuoteDetailPage({ params }: PageProps) {
+  const { id } = await params
   const supabase = await createClient()
-  const id = params.id
 
   const { data: quote } = await supabase
     .from('quotes')
