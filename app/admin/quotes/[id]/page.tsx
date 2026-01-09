@@ -53,13 +53,13 @@ export default async function QuoteDetailPage({ params }: PageProps) {
               name="selected_item"
               value={item.quote_item_id}
               defaultChecked={item.included === true}
-              disabled={!isSent || (hasSelectedItem && !item.included)}
+              disabled={!isSent}
             />
             {item.brand} {item.model} — ${item.total_with_services}
           </label>
         ))}
 
-        {isSent && !hasSelectedItem && (
+        {isSent && (
           <button type="submit" style={{ marginTop: 16 }}>
             Guardar selección
           </button>
