@@ -1,91 +1,119 @@
+import { notFound } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
 
-import Link from 'next/link'
-import { getQuoteById } from '@/lib/quotes/getQuoteById'
-import { getQuoteItemsByQuoteId } from '@/lib/quotes/getQuoteItemsByQuoteId'
-import { selectQuoteItem } from '@/lib/quotes/selectQuoteItem'
-import { sendQuote } from '@/lib/quotes/sendQuote'
+interface PageProps {
+  params: Promise<{ id: string }>
+}
 
-export default async function QuoteDetailPage(
-  { params }: { params: Promise<{ id: string }> }
-) {
+export default async function QuoteDetailPage({ params }: PageProps) {
   const { id } = await params
-  const quote = await getQuoteById(id)
-  const items = await getQuoteItemsByQuoteId(id)
+  const supabase = createClient()
 
-  const isDraft = quote.status === 'DRAFT'
+  // 1️⃣ Obtener cotización
+  const { data: quote } = await supabase
+    .from('quotes')
+    .select('*')
+    .eq('quote_id', id)
+    .single()
+
+  if (!quote) {
+    notFound()
+  }
+
+  // 2️⃣ Obtener llantas cotizadas (quote_items)
+  const { data: items = [] } = await supabase
+    .from('quote_items')
+    .select('*')
+    .eq('quote_id', id)
+    .eq('included', true)
+    .order('rank')
+
+  // 3️⃣ Action para seleccionar llanta
+  async function selectItem(formData: FormData) {
+    'use server'
+    const selectedId = formData.get('selected_item') as string
+    const supabase = createClient()
+
+    await supabase
+      .from('quotes')
+      .update({ selected_quote_item_id: selectedId })
+      .eq('quote_id', id)
+  }
 
   return (
-    <div style={{ maxWidth: 900 }}>
-      <Link href="/admin/quotes">← Volver a cotizaciones</Link>
+    <div className="max-w-4xl mx-auto space-y-6">
+      <a
+        href="/admin/quotes"
+        className="text-sm text-muted hover:underline"
+      >
+        ← Volver a cotizaciones
+      </a>
 
-      <h1 style={{ fontSize: 24, fontWeight: 600, marginTop: 16 }}>
-        Cotización #{quote.quote_no ?? '—'}
-      </h1>
-
-      <div style={{ marginTop: 24 }}>
-        <p><strong>Cliente:</strong> {quote.customer_name ?? '—'}</p>
-        <p><strong>Vehículo:</strong> {quote.vehicle_text ?? '—'}</p>
-        <p><strong>Medida:</strong> {quote.size ?? '—'} × {quote.quantity ?? '—'}</p>
-        <p><strong>Status:</strong> {quote.status}</p>
+      <div>
+        <h1 className="text-2xl font-semibold">
+          Cotización #{quote.quote_no}
+        </h1>
+        <p className="text-sm text-muted">
+          Cliente: {quote.customer_name || '—'}
+        </p>
+        <p className="text-sm text-muted">
+          Status: {quote.status}
+        </p>
       </div>
 
-      <h2 style={{ marginTop: 32 }}>Seleccionar llanta</h2>
+      <section>
+        <h2 className="text-lg font-medium mb-3">
+          Seleccionar llanta
+        </h2>
 
-      {items.length === 0 && (
-        <p style={{ opacity: 0.6 }}>No hay opciones disponibles.</p>
-      )}
+        {items.length === 0 ? (
+          <p className="text-sm text-muted">
+            No hay opciones disponibles.
+          </p>
+        ) : (
+          <form action={selectItem} className="space-y-3">
+            {items.map(item => (
+              <label
+                key={item.quote_item_id}
+                className="block border rounded p-4 cursor-pointer hover:bg-muted"
+              >
+                <div className="flex gap-3 items-start">
+                  <input
+                    type="radio"
+                    name="selected_item"
+                    value={item.quote_item_id}
+                    defaultChecked={
+                      quote.selected_quote_item_id === item.quote_item_id
+                    }
+                  />
 
-      <form>
-        {items.map(item => (
-          <label
-            key={item.id}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              padding: '8px 0',
-              borderBottom: '1px solid #e5e7eb',
-              opacity: isDraft ? 1 : 0.6,
-            }}
-          >
-            <input
-              type="radio"
-              name="quoteItem"
-              value={item.id}
-              defaultChecked={quote.selected_quote_item_id === item.id}
-              disabled={!isDraft}
-              formAction={
-                isDraft
-                  ? selectQuoteItem.bind(null, id, item.id)
-                  : undefined
-              }
-            />
-            <div>
-              <strong>{item.brand} {item.model}</strong><br />
-              <small>
-                ${item.price ?? '—'} · Stock: {item.stock ?? '—'}
-              </small>
-            </div>
-          </label>
-        ))}
-      </form>
+                  <div className="flex-1">
+                    <p className="font-medium">
+                      {item.brand} – {item.model}
+                    </p>
+                    <p className="text-sm text-muted">
+                      {item.size} · {item.load_speed}
+                    </p>
+                    <p className="text-sm">
+                      Total:{' '}
+                      <strong>
+                        ${item.total_with_services.toLocaleString()}
+                      </strong>
+                    </p>
+                  </div>
+                </div>
+              </label>
+            ))}
 
-      {isDraft && (
-        <form action={sendQuote.bind(null, quote.quote_id)} style={{ marginTop: 24 }}>
-          <button
-            style={{
-              padding: '10px 16px',
-              borderRadius: 6,
-              border: 'none',
-              background: '#16a34a',
-              color: 'white',
-              cursor: 'pointer',
-            }}
-          >
-            Enviar cotización
-          </button>
-        </form>
-      )}
+            <button
+              type="submit"
+              className="mt-4 px-4 py-2 rounded bg-black text-white text-sm"
+            >
+              Guardar selección
+            </button>
+          </form>
+        )}
+      </section>
     </div>
   )
 }
