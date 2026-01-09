@@ -1,13 +1,15 @@
 
 import Link from 'next/link'
 import { getQuoteById } from '@/lib/quotes/getQuoteById'
-import { updateQuoteStatus } from '@/lib/quotes/updateQuoteStatus'
+import { getQuoteItemsByQuoteId } from '@/lib/quotes/getQuoteItemsByQuoteId'
+import { selectQuoteItem } from '@/lib/quotes/selectQuoteItem'
 
 export default async function QuoteDetailPage(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
   const quote = await getQuoteById(id)
+  const items = await getQuoteItemsByQuoteId(id)
 
   return (
     <div style={{ maxWidth: 900 }}>
@@ -19,46 +21,45 @@ export default async function QuoteDetailPage(
 
       <div style={{ marginTop: 24 }}>
         <p><strong>Cliente:</strong> {quote.customer_name ?? '—'}</p>
-        <p><strong>Teléfono:</strong> {quote.customer_phone ?? '—'}</p>
         <p><strong>Vehículo:</strong> {quote.vehicle_text ?? '—'}</p>
-        <p><strong>Medida:</strong> {quote.size ?? '—'}</p>
-        <p><strong>Cantidad:</strong> {quote.quantity ?? '—'}</p>
+        <p><strong>Medida:</strong> {quote.size ?? '—'} × {quote.quantity ?? '—'}</p>
         <p><strong>Status:</strong> {quote.status}</p>
       </div>
 
-      {quote.status === 'DRAFT' && (
-        <div style={{ display: 'flex', gap: 12, marginTop: 32 }}>
-          <form action={updateQuoteStatus.bind(null, quote.quote_id, 'APPROVED')}>
-            <button
-              style={{
-                padding: '8px 16px',
-                borderRadius: 6,
-                border: 'none',
-                background: '#2563eb',
-                color: 'white',
-                cursor: 'pointer',
-              }}
-            >
-              Aprobar
-            </button>
-          </form>
+      <h2 style={{ marginTop: 32 }}>Seleccionar llanta</h2>
 
-          <form action={updateQuoteStatus.bind(null, quote.quote_id, 'CANCELLED')}>
-            <button
-              style={{
-                padding: '8px 16px',
-                borderRadius: 6,
-                border: '1px solid #ef4444',
-                background: '#fff',
-                color: '#ef4444',
-                cursor: 'pointer',
-              }}
-            >
-              Cancelar
-            </button>
-          </form>
-        </div>
+      {items.length === 0 && (
+        <p style={{ opacity: 0.6 }}>No hay opciones disponibles.</p>
       )}
+
+      <form>
+        {items.map(item => (
+          <label
+            key={item.id}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '8px 0',
+              borderBottom: '1px solid #e5e7eb',
+            }}
+          >
+            <input
+              type="radio"
+              name="quoteItem"
+              value={item.id}
+              defaultChecked={quote.selected_quote_item_id === item.id}
+              formAction={selectQuoteItem.bind(null, id, item.id)}
+            />
+            <div>
+              <strong>{item.brand} {item.model}</strong><br />
+              <small>
+                ${item.price ?? '—'} · Stock: {item.stock ?? '—'}
+              </small>
+            </div>
+          </label>
+        ))}
+      </form>
     </div>
   )
 }
