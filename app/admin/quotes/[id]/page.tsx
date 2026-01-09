@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { selectQuoteItem } from '@/lib/quotes/selectQuoteItem'
 
@@ -15,13 +16,14 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     .eq('quote_id', id)
     .single()
 
-  const isSent = quote?.status === 'SENT'
-
   const { data: items } = await supabase
     .from('quote_items')
     .select('*')
     .eq('quote_id', id)
     .order('rank')
+
+  const isSent = quote?.status === 'SENT'
+  const hasSelectedItem = items?.some(i => i.included)
 
   async function saveSelection(formData: FormData) {
     'use server'
@@ -29,6 +31,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     const selected = formData.get('selected_item') as string | null
     if (!selected) return
     await selectQuoteItem(id, selected)
+    redirect(`/admin/quotes/${id}`)
   }
 
   return (
@@ -42,7 +45,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
               type="radio"
               name="selected_item"
               value={item.quote_item_id}
-              defaultChecked={quote?.selected_quote_item_id === item.quote_item_id}
+              defaultChecked={item.included === true}
               disabled={!isSent}
             />
             {item.brand} {item.model} — ${item.total_with_services}
@@ -55,6 +58,14 @@ export default async function QuoteDetailPage({ params }: PageProps) {
           </button>
         )}
       </form>
+
+      {isSent && hasSelectedItem && (
+        <form action={`/admin/quotes/${id}/approve`} method="post">
+          <button style={{ marginTop: 24 }}>
+            Aprobar cotización
+          </button>
+        </form>
+      )}
     </div>
   )
 }
