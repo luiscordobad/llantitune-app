@@ -1,7 +1,7 @@
-import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { createServerClient } from '@/lib/supabase/server'
 
 export async function getQuotes() {
-  const supabase = await createSupabaseServerClient()
+  const supabase = createServerClient()
 
   const { data, error } = await supabase
     .from('quotes')
