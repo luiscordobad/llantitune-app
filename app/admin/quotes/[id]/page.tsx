@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { selectQuoteItem } from '@/lib/quotes/selectQuoteItem'
 import { markQuoteSent } from '@/lib/quotes/markQuoteSent'
+import { approveQuote } from '@/lib/quotes/approveQuote'
+import { cancelQuote } from '@/lib/quotes/cancelQuote'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -12,7 +14,6 @@ export default async function QuoteDetailPage({ params }: PageProps) {
   const { id } = await params
   const supabase = await createClient()
 
-  // Quote header
   const { data: quote } = await supabase
     .from('quotes')
     .select('*')
@@ -23,15 +24,15 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
   const isDraft = quote.status === 'DRAFT'
   const isSent = quote.status === 'SENT'
+  const isApproved = quote.status === 'APPROVED'
+  const isCancelled = quote.status === 'CANCELLED'
 
-  // Quote line (vehicle + size)
   const { data: line } = await supabase
     .from('quote_lines')
     .select('*')
     .eq('quote_id', id)
     .single()
 
-  // Items
   const { data: rawItems } = await supabase
     .from('quote_items')
     .select('*')
@@ -61,12 +62,14 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
       <div style={{ marginTop: 12, fontSize: 14, lineHeight: 1.6 }}>
         <p><strong>Status:</strong> {quote.status}</p>
-
         {quote.sent_at && (
-          <p>
-            <strong>Enviada:</strong>{' '}
-            {new Date(quote.sent_at).toLocaleString()}
-          </p>
+          <p><strong>Enviada:</strong> {new Date(quote.sent_at).toLocaleString()}</p>
+        )}
+        {quote.approved_at && (
+          <p><strong>Aprobada:</strong> {new Date(quote.approved_at).toLocaleString()}</p>
+        )}
+        {quote.rejected_at && (
+          <p><strong>Cancelada:</strong> {new Date(quote.rejected_at).toLocaleString()}</p>
         )}
 
         <p><strong>Cliente:</strong> {quote.customer_name ?? '—'}</p>
@@ -85,14 +88,10 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         <p><strong>Cantidad:</strong> {line?.quantity ?? '—'}</p>
       </div>
 
-      <h2 style={{ marginTop: 32, fontSize: 18 }}>
-        Opciones cotizadas
-      </h2>
+      <h2 style={{ marginTop: 32, fontSize: 18 }}>Opciones cotizadas</h2>
 
       {items.length === 0 ? (
-        <p style={{ marginTop: 12, color: '#777' }}>
-          No hay opciones disponibles.
-        </p>
+        <p style={{ marginTop: 12, color: '#777' }}>No hay opciones disponibles.</p>
       ) : (
         <form action={handleSelect} style={{ marginTop: 16 }}>
           {items.map(item => (
@@ -118,7 +117,6 @@ export default async function QuoteDetailPage({ params }: PageProps) {
                   }
                   disabled={!isSent}
                 />
-
                 <div>
                   <div style={{ fontWeight: 600 }}>
                     {item.brand} – {item.model}
@@ -127,10 +125,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
                     {item.size} · {item.load_speed} · Stock {item.stock}
                   </div>
                   <div style={{ marginTop: 4 }}>
-                    Total:{' '}
-                    <strong>
-                      ${Number(item.total_with_services).toLocaleString()}
-                    </strong>
+                    Total: <strong>${Number(item.total_with_services).toLocaleString()}</strong>
                   </div>
                 </div>
               </div>
@@ -169,9 +164,49 @@ export default async function QuoteDetailPage({ params }: PageProps) {
               cursor: 'pointer',
             }}
           >
-            Enviar cotización al cliente
+            Enviar cotización
           </button>
         </form>
+      )}
+
+      {isSent && (
+        <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+          <form action={approveQuote.bind(null, quote.quote_id)}>
+            <button
+              style={{
+                padding: '10px 18px',
+                borderRadius: 6,
+                border: 'none',
+                background: '#16a34a',
+                color: 'white',
+                cursor: 'pointer',
+              }}
+            >
+              Aprobar cotización
+            </button>
+          </form>
+
+          <form action={cancelQuote.bind(null, quote.quote_id)}>
+            <button
+              style={{
+                padding: '10px 18px',
+                borderRadius: 6,
+                border: '1px solid #dc2626',
+                background: 'white',
+                color: '#dc2626',
+                cursor: 'pointer',
+              }}
+            >
+              Cancelar cotización
+            </button>
+          </form>
+        </div>
+      )}
+
+      {(isApproved || isCancelled) && (
+        <p style={{ marginTop: 24, color: '#666' }}>
+          Esta cotización ya está cerrada y no se puede modificar.
+        </p>
       )}
     </div>
   )

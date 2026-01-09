@@ -1,11 +1,10 @@
 
-PASO 6.1 — DRAFT ACTIVO + JOIN quote_lines
+PASO 7 — APROBAR / CANCELAR COTIZACIÓN
 
-Cambios:
-- DRAFT ahora muestra botón "Enviar cotización"
-- SENT sigue siendo editable para selección
-- Se leen datos reales del vehículo desde quote_lines
+Desde status SENT:
+- Seleccionar llanta
+- Aprobar → status APPROVED + approved_at
+- Cancelar → status CANCELLED + rejected_at
 
-Archivos:
-- lib/quotes/markQuoteSent.ts
-- app/admin/quotes/[id]/page.tsx
+No crea orden todavía.
+Eso es Paso 8.
