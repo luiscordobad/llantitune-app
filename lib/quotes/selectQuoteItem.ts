@@ -1,20 +1,19 @@
-
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
 
-export async function selectQuoteItem(quoteId: string, itemId: string) {
+export async function selectQuoteItem(quoteId: string, quoteItemId: string) {
   const supabase = await createClient()
 
-  const { error } = await supabase
-    .from('quotes')
-    .update({
-      selected_quote_item_id: itemId,
-    })
+  // desmarcar todos
+  await supabase
+    .from('quote_items')
+    .update({ included: false })
     .eq('quote_id', quoteId)
-    .eq('status', 'SENT')
 
-  if (error) {
-    throw new Error('No se pudo guardar la selección de llanta')
-  }
+  // marcar el seleccionado
+  await supabase
+    .from('quote_items')
+    .update({ included: true })
+    .eq('quote_item_id', quoteItemId)
 }
