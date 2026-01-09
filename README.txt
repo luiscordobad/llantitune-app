@@ -1,18 +1,12 @@
 
-PASO 4 — SELECCIÓN DE LLANTA (RADIOS)
+PASO 4 — FIX DE TIPOS
 
-OBJETIVO:
-- Mostrar opciones reales de llantas (quote_items)
-- Solo included = true
-- Radio buttons reales (una selección)
-- Guardar selected_quote_item_id en quotes
+PROBLEMA:
+selected_quote_item_id existía en BD pero no en el tipo QuoteDetail.
 
-ARCHIVOS:
-- lib/quotes/getQuoteItemsByQuoteId.ts
-- lib/quotes/selectQuoteItem.ts
-- app/admin/quotes/[id]/page.tsx
+SOLUCIÓN:
+- Agregar selected_quote_item_id al tipo
+- Agregarlo al select de Supabase
 
-CHECKPOINT:
-- Ves lista de llantas
-- Seleccionas una
-- Se guarda y persiste al recargar
+ARCHIVO A REEMPLAZAR:
+- lib/quotes/getQuoteById.ts

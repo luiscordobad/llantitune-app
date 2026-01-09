@@ -12,6 +12,7 @@ export type QuoteDetail = {
   quantity: number | null
   status: string
   created_at: string
+  selected_quote_item_id: string | null
 }
 
 export async function getQuoteById(quoteId: string): Promise<QuoteDetail> {
@@ -28,7 +29,8 @@ export async function getQuoteById(quoteId: string): Promise<QuoteDetail> {
       size,
       quantity,
       status,
-      created_at
+      created_at,
+      selected_quote_item_id
     `)
     .eq('quote_id', quoteId)
     .single()
