@@ -20,13 +20,16 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     notFound()
   }
 
-  // 2️⃣ Obtener llantas cotizadas (quote_items)
-  const { data: items = [] } = await supabase
+  // 2️⃣ Obtener llantas (RAW)
+  const { data: rawItems } = await supabase
     .from('quote_items')
     .select('*')
     .eq('quote_id', id)
     .eq('included', true)
     .order('rank')
+
+  // ✅ NORMALIZACIÓN (CLAVE PARA TS)
+  const items = rawItems ?? []
 
   // 3️⃣ Action: guardar llanta seleccionada
   async function selectItem(formData: FormData) {
