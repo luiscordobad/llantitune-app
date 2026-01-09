@@ -25,9 +25,19 @@ export default async function WorkOrderDetailPage({ params }: PageProps) {
     .eq('id', id)
     .single()
 
-  const quote = Array.isArray(order?.quotes) ? order?.quotes[0] : order?.quotes
+  if (!order) {
+    return (
+      <div style={{ maxWidth: 800, margin: '0 auto' }}>
+        <h1>Orden no encontrada</h1>
+      </div>
+    )
+  }
 
-  const { data: item } = quote
+  const quote = Array.isArray(order.quotes)
+    ? order.quotes[0]
+    : order.quotes
+
+  const { data: item } = order.quote_id
     ? await supabase
         .from('quote_items')
         .select('*')
@@ -57,7 +67,7 @@ export default async function WorkOrderDetailPage({ params }: PageProps) {
       )}
 
       <h2>Status</h2>
-      <p>{order?.status}</p>
+      <p>{order.status}</p>
     </div>
   )
 }
