@@ -1,7 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
 import { selectQuoteItem } from '@/lib/quotes/selectQuoteItem'
 
-export default async function QuoteDetailPage({ params }: { params: { id: string } }) {
+export default async function QuoteDetailPage({
+  params,
+}: {
+  params: { id: string }
+}) {
   const supabase = await createClient()
   const id = params.id
 
@@ -11,29 +15,46 @@ export default async function QuoteDetailPage({ params }: { params: { id: string
     .eq('quote_id', id)
     .single()
 
+  const isSent = quote?.status === 'SENT'
+
   const { data: items } = await supabase
     .from('quote_items')
     .select('*')
     .eq('quote_id', id)
-    .eq('included', true)
+    .order('rank')
+
+  async function saveSelection(formData: FormData) {
+    'use server'
+    if (!isSent) return
+    const selected = formData.get('selected_item') as string | null
+    if (!selected) return
+    await selectQuoteItem(id, selected)
+  }
 
   return (
-    <div>
+    <div style={{ maxWidth: 900, margin: '0 auto' }}>
       <h1>Cotización #{quote?.quote_no}</h1>
 
-      <h2>Seleccionar llanta</h2>
+      <form action={saveSelection}>
+        {items?.map(item => (
+          <label key={item.quote_item_id} style={{ display: 'block', marginBottom: 12 }}>
+            <input
+              type="radio"
+              name="selected_item"
+              value={item.quote_item_id}
+              defaultChecked={quote?.selected_quote_item_id === item.quote_item_id}
+              disabled={!isSent}
+            />
+            {item.brand} {item.model} — ${item.total_with_services}
+          </label>
+        ))}
 
-      {(!items || items.length === 0) && (
-        <p>No hay opciones disponibles.</p>
-      )}
-
-      {items?.map(item => (
-        <form key={item.quote_item_id} action={selectQuoteItem.bind(null, id, item.quote_item_id)}>
-          <button type="submit">
-            Seleccionar {item.brand} {item.model}
+        {isSent && (
+          <button type="submit" style={{ marginTop: 16 }}>
+            Guardar selección
           </button>
-        </form>
-      ))}
+        )}
+      </form>
     </div>
   )
 }
