@@ -1,35 +1,41 @@
 
 import { createClient } from '@/lib/supabase/server'
+import { notFound } from 'next/navigation'
 
-export async function getQuoteById(quoteId: string) {
+export type QuoteDetail = {
+  quote_id: string
+  quote_no: number | null
+  customer_name: string | null
+  customer_phone: string | null
+  vehicle_text: string | null
+  size: string | null
+  quantity: number | null
+  status: string
+  created_at: string
+}
+
+export async function getQuoteById(quoteId: string): Promise<QuoteDetail> {
   const supabase = await createClient()
 
   const { data, error } = await supabase
     .from('quotes')
     .select(`
-      id,
-      folio,
-      client_name,
+      quote_id,
+      quote_no,
+      customer_name,
+      customer_phone,
+      vehicle_text,
+      size,
+      quantity,
       status,
-      quote_lines (
-        id,
-        size,
-        quote_items (
-          id,
-          brand,
-          model,
-          price,
-          stock,
-          included
-        )
-      )
+      created_at
     `)
-    .eq('id', quoteId)
+    .eq('quote_id', quoteId)
     .single()
 
-  if (error) {
-    console.error(error)
-    throw new Error('No se pudo cargar la cotización')
+  if (error || !data) {
+    console.error('[getQuoteById]', error)
+    notFound()
   }
 
   return data

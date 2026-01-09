@@ -1,68 +1,31 @@
 
-import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { getQuoteById } from '@/lib/quotes/getQuoteById'
 
 type PageProps = {
-  params: Promise<{
-    id: string
-  }>
+  params: { id: string }
 }
 
-export default async function QuoteManagePage({ params }: PageProps) {
-  const { id: quoteId } = await params
-  const quote = await getQuoteById(quoteId)
-
-  async function approveQuote() {
-    'use server'
-    redirect('/admin/quotes')
-  }
-
-  async function cancelQuote() {
-    'use server'
-    redirect('/admin/quotes')
-  }
+export default async function QuoteDetailPage({ params }: PageProps) {
+  const quote = await getQuoteById(params.id)
 
   return (
-    <div>
-      <h1>Gestionar cotización</h1>
+    <div style={{ maxWidth: 900 }}>
+      <Link href="/admin/quotes">
+        ← Volver a cotizaciones
+      </Link>
 
-      <p><strong>Folio:</strong> {quote.folio}</p>
-      <p><strong>Cliente:</strong> {quote.client_name}</p>
-      <p><strong>Status:</strong> {quote.status}</p>
+      <h1 style={{ fontSize: 24, fontWeight: 600, marginTop: 16 }}>
+        Cotización #{quote.quote_no ?? '—'}
+      </h1>
 
-      <hr />
-
-      {quote.quote_lines.map((line: any) => (
-        <div key={line.id} style={{ marginTop: 24 }}>
-          <h3>{line.size}</h3>
-
-          {line.quote_items
-            .filter((item: any) => item.included)
-            .map((item: any) => (
-              <div
-                key={item.id}
-                style={{
-                  padding: 12,
-                  border: '1px solid #e5e7eb',
-                  borderRadius: 8,
-                  marginBottom: 8,
-                }}
-              >
-                <strong>{item.brand} {item.model}</strong><br />
-                ${item.price} — Stock: {item.stock}
-              </div>
-            ))}
-        </div>
-      ))}
-
-      <div style={{ marginTop: 32, display: 'flex', gap: 12 }}>
-        <form action={cancelQuote}>
-          <button type="submit">Cancelar</button>
-        </form>
-
-        <form action={approveQuote}>
-          <button type="submit">Aprobar</button>
-        </form>
+      <div style={{ marginTop: 24 }}>
+        <p><strong>Cliente:</strong> {quote.customer_name ?? '—'}</p>
+        <p><strong>Teléfono:</strong> {quote.customer_phone ?? '—'}</p>
+        <p><strong>Vehículo:</strong> {quote.vehicle_text ?? '—'}</p>
+        <p><strong>Medida:</strong> {quote.size ?? '—'}</p>
+        <p><strong>Cantidad:</strong> {quote.quantity ?? '—'}</p>
+        <p><strong>Status:</strong> {quote.status}</p>
       </div>
     </div>
   )
