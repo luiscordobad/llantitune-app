@@ -8,6 +8,10 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+/* =========================================================
+   POST /api/quote
+   Paso 4 – buscar llantas desde master_tires + offers
+========================================================= */
 export async function POST(req: Request) {
   try {
     const body = await req.json()
@@ -21,6 +25,7 @@ export async function POST(req: Request) {
       minStock
     } = body
 
+    /* 1️⃣ Crear cotización */
     const { data: quote, error: quoteError } = await supabase
       .from('quotes')
       .insert({
@@ -33,12 +38,16 @@ export async function POST(req: Request) {
       .single()
 
     if (quoteError || !quote) {
-      return NextResponse.json({ error: 'Failed to create quote' }, { status: 500 })
+      return NextResponse.json(
+        { error: 'Failed to create quote' },
+        { status: 500 }
+      )
     }
 
     const responseLines: any[] = []
 
     for (const line of lines) {
+      /* 2️⃣ Crear línea */
       const { data: ql } = await supabase
         .from('quote_lines')
         .insert({
@@ -54,13 +63,13 @@ export async function POST(req: Request) {
 
       if (!ql) continue
 
-      const { data: inventory } = await supabase
-        .from('inventory')
-        .select('*')
+      /* 3️⃣ Buscar llantas base */
+      const { data: tires } = await supabase
+        .from('master_tires')
+        .select('tire_id, brand, model, load_speed')
         .eq('size', ql.size)
-        .gte('stock', minStock)
 
-      if (!inventory || inventory.length === 0) {
+      if (!tires || tires.length === 0) {
         responseLines.push({
           lineId: ql.line_id,
           size: ql.size,
@@ -73,22 +82,62 @@ export async function POST(req: Request) {
         continue
       }
 
-      const itemsToInsert = inventory.map(inv => {
-        const priceEach = Math.round(inv.cost * (1 + markup / 100))
-        const qty = Math.min(inv.stock, ql.requested_qty)
+      const tireIds = tires.map(t => t.tire_id)
+
+      /* 4️⃣ Buscar ofertas (AQUÍ está stock y precio) */
+      const { data: offers } = await supabase
+        .from('offers')
+        .select('*')
+        .in('tire_id', tireIds)
+        .eq('size', ql.size)
+        .gte('stock', minStock)
+
+      if (!offers || offers.length === 0) {
+        responseLines.push({
+          lineId: ql.line_id,
+          size: ql.size,
+          requestedQty: ql.requested_qty,
+          vehicleMake: ql.vehicle_make,
+          vehicleModel: ql.vehicle_model,
+          vehicleYear: ql.vehicle_year,
+          options: []
+        })
+        continue
+      }
+
+      /* 5️⃣ Armar items */
+      const itemsToInsert = offers.map(off => {
+        const tire = tires.find(t => t.tire_id === off.tire_id)
+        if (!tire) return null
+
+        const qty = Math.min(Number(off.stock), ql.requested_qty)
+        const priceEach = Math.round(Number(off.cost) * (1 + markup / 100))
 
         return {
           line_id: ql.line_id,
-          brand: inv.brand,
-          model: inv.model,
-          tier_label: inv.tier_label,
-          stock: inv.stock,
+          brand: tire.brand ?? off.brand,
+          model: tire.model ?? off.model,
+          tier_label: off.provider, // o lo que uses como gama
+          stock: Number(off.stock),
           quoted_qty: qty,
           price_each: priceEach,
           total_tires: priceEach * qty,
           included: true
         }
-      })
+      }).filter(Boolean)
+
+      if (!itemsToInsert.length) {
+        responseLines.push({
+          lineId: ql.line_id,
+          size: ql.size,
+          requestedQty: ql.requested_qty,
+          vehicleMake: ql.vehicle_make,
+          vehicleModel: ql.vehicle_model,
+          vehicleYear: ql.vehicle_year,
+          options: []
+        })
+        continue
+      }
 
       const { data: items } = await supabase
         .from('quote_items')
@@ -121,17 +170,26 @@ export async function POST(req: Request) {
       quoteNumber: 'BORRADOR',
       lines: responseLines
     })
-  } catch (e) {
-    return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'Invalid request body' },
+      { status: 400 }
+    )
   }
 }
 
+/* =========================================================
+   GET /api/quote
+========================================================= */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const quoteId = searchParams.get('quoteId')
 
   if (!quoteId) {
-    return NextResponse.json({ error: 'quoteId required' }, { status: 400 })
+    return NextResponse.json(
+      { error: 'quoteId is required' },
+      { status: 400 }
+    )
   }
 
   const { data: quote } = await supabase
