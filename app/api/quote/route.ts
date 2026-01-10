@@ -8,7 +8,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// ✅ GET /api/quote?quoteId=UUID
+// ✅ GET usado por /admin/quotes/[id]/approve
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const quoteId = searchParams.get('quoteId')
@@ -25,11 +25,12 @@ export async function GET(req: Request) {
     .select(`
       *,
       quote_lines (
-        *,
+        line_id,
+        selected_quote_item_id,
         quote_items (*)
       )
     `)
-    .eq('quote_id', quoteId)
+    .eq('quote_id', quoteId) // ✅ CLAVE
     .single()
 
   if (error || !data) {
@@ -40,10 +41,4 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json(data)
-}
-
-// (tu POST existente se queda igual)
-export async function POST(req: Request) {
-  const body = await req.json()
-  return NextResponse.json(body)
 }
