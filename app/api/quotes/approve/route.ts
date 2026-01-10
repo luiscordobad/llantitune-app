@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
@@ -19,7 +20,6 @@ export async function POST(req: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // 1. Set selected quote item for the line
     const { error: lineErr } = await supabase
       .from('quote_lines')
       .update({ selected_quote_item_id: quote_item_id })
@@ -27,7 +27,6 @@ export async function POST(req: Request) {
 
     if (lineErr) throw lineErr
 
-    // 2. Approve quote
     const { error: quoteErr } = await supabase
       .from('quotes')
       .update({
@@ -38,7 +37,6 @@ export async function POST(req: Request) {
 
     if (quoteErr) throw quoteErr
 
-    // 3. Create order
     const { error: orderErr } = await supabase
       .from('orders')
       .insert({
