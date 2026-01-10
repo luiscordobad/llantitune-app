@@ -8,7 +8,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// ✅ GET usado por /admin/quotes/[id]/approve
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const quoteId = searchParams.get('quoteId')
@@ -20,25 +19,41 @@ export async function GET(req: Request) {
     )
   }
 
-  const { data, error } = await supabase
+  // 1️⃣ Obtener la cotización (SIN JOIN)
+  const { data: quote, error: quoteError } = await supabase
     .from('quotes')
-    .select(`
-      *,
-      quote_lines (
-        line_id,
-        selected_quote_item_id,
-        quote_items (*)
-      )
-    `)
-    .eq('quote_id', quoteId) // ✅ CLAVE
+    .select('*')
+    .eq('quote_id', quoteId)
     .single()
 
-  if (error || !data) {
+  if (quoteError || !quote) {
     return NextResponse.json(
       { error: 'Quote not found' },
       { status: 404 }
     )
   }
 
-  return NextResponse.json(data)
+  // 2️⃣ Obtener líneas
+  const { data: lines } = await supabase
+    .from('quote_lines')
+    .select('*')
+    .eq('quote_id', quoteId)
+
+  // 3️⃣ Obtener items por línea
+  const lineIds = lines?.map(l => l.line_id) ?? []
+
+  const { data: items } = lineIds.length
+    ? await supabase
+        .from('quote_items')
+        .select('*')
+        .in('line_id', lineIds)
+    : { data: [] }
+
+  return NextResponse.json({
+    ...quote,
+    quote_lines: lines?.map(line => ({
+      ...line,
+      quote_items: items?.filter(i => i.line_id === line.line_id) ?? []
+    })) ?? []
+  })
 }
