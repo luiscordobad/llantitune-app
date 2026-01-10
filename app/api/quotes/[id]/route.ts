@@ -4,10 +4,8 @@ import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 
-export async function GET(
-  _request: Request,
-  context: { params: { id: string } }
-) {
+// NOTE: Do NOT type the second argument in Next.js 15
+export async function GET(request: Request, context: any) {
   const { id } = context.params
 
   const supabase = createClient(
