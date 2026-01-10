@@ -9,10 +9,7 @@ export async function POST(req: Request) {
     const { quote_id, line_id, quote_item_id } = await req.json()
 
     if (!quote_id || !line_id || !quote_item_id) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
     }
 
     const supabase = createClient(
@@ -20,39 +17,22 @@ export async function POST(req: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    const { error: lineErr } = await supabase
+    await supabase
       .from('quote_lines')
       .update({ selected_quote_item_id: quote_item_id })
       .eq('line_id', line_id)
 
-    if (lineErr) throw lineErr
-
-    const { error: quoteErr } = await supabase
+    await supabase
       .from('quotes')
-      .update({
-        status: 'APPROVED',
-        approved_at: new Date().toISOString()
-      })
+      .update({ status: 'APPROVED', approved_at: new Date().toISOString() })
       .eq('quote_id', quote_id)
 
-    if (quoteErr) throw quoteErr
-
-    const { error: orderErr } = await supabase
+    await supabase
       .from('orders')
-      .insert({
-        quote_id,
-        status: 'OPEN'
-      })
-
-    if (orderErr) throw orderErr
+      .insert({ quote_id, status: 'OPEN' })
 
     return NextResponse.json({ ok: true })
-
-  } catch (err: any) {
-    console.error('Approve quote error:', err)
-    return NextResponse.json(
-      { error: err.message ?? 'Internal server error' },
-      { status: 500 }
-    )
+  } catch (err) {
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }
