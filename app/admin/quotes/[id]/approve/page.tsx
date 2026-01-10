@@ -1,45 +1,37 @@
-import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+'use client'
 
-interface PageProps {
-  params: Promise<{ id: string }>
-}
+import { useEffect } from 'react'
+import { useRouter, useParams } from 'next/navigation'
 
-export default async function ApproveQuotePage({ params }: PageProps) {
-  const { id } = await params
-  const supabase = await createClient()
+export default function ApproveQuotePage() {
+  const router = useRouter()
+  const params = useParams()
+  const quoteId = params.id as string
 
-  const { data: quote } = await supabase
-    .from('quotes')
-    .select('*')
-    .eq('quote_id', id)
-    .single()
+  useEffect(() => {
+    async function approve() {
+      try {
+        const res = await fetch('/api/quotes/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            quote_id: quoteId,
+            line_id: null,
+            quote_item_id: null
+          })
+        })
 
-  async function approve() {
-    'use server'
-    await supabase
-      .from('quotes')
-      .update({ status: 'APPROVED' })
-      .eq('quote_id', id)
+        if (!res.ok) throw new Error('Approval failed')
 
-    await supabase.from('work_orders').insert({
-      quote_id: id,
-      customer_id: quote.customer_id,
-      status: 'OPEN',
-    })
+        router.push(`/admin/quotes/${quoteId}`)
+      } catch (err) {
+        console.error(err)
+        alert('Error approving quote')
+      }
+    }
 
-    redirect('/admin/work-orders')
-  }
+    approve()
+  }, [quoteId, router])
 
-  return (
-    <div style={{ maxWidth: 600, margin: '0 auto' }}>
-      <h1>Aprobar cotización #{quote?.quote_no}</h1>
-      <p>Esto generará una orden de trabajo.</p>
-      <form action={approve}>
-        <button style={{ marginTop: 24 }}>
-          Confirmar aprobación
-        </button>
-      </form>
-    </div>
-  )
+  return <p>Aprobando cotización…</p>
 }
