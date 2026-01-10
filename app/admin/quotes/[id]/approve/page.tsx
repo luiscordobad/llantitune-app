@@ -11,13 +11,27 @@ export default function ApproveQuotePage() {
   useEffect(() => {
     async function approve() {
       try {
+        // 1. Get quote details
+        const quoteRes = await fetch(`/api/quotes/${quoteId}`)
+        if (!quoteRes.ok) throw new Error('Failed to load quote')
+
+        const quote = await quoteRes.json()
+
+        const line = quote.lines?.[0]
+        const selectedItemId = line?.selected_quote_item_id
+
+        if (!line || !selectedItemId) {
+          throw new Error('No selected quote item')
+        }
+
+        // 2. Approve quote
         const res = await fetch('/api/quotes/approve', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             quote_id: quoteId,
-            line_id: null,
-            quote_item_id: null
+            line_id: line.line_id,
+            quote_item_id: selectedItemId
           })
         })
 
