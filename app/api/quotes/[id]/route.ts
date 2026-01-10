@@ -5,9 +5,11 @@ import { NextResponse } from 'next/server'
 export const runtime = 'nodejs'
 
 export async function GET(
-  req: Request,
-  { params }: { params: { id: string } }
+  _request: Request,
+  context: { params: { id: string } }
 ) {
+  const { id } = context.params
+
   const supabase = createClient(
     process.env.SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -22,7 +24,7 @@ export async function GET(
         selected_quote_item_id
       )
     `)
-    .eq('quote_id', params.id)
+    .eq('quote_id', id)
     .single()
 
   if (error || !data) {
