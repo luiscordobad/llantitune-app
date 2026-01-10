@@ -12,8 +12,8 @@ export default function ApproveQuotePage() {
   useEffect(() => {
     async function run() {
       try {
-        // Correct API endpoint
-        const q = await fetch(`/api/quote/${quoteId}`)
+        // Use EXISTING backend API that expects quoteId as query param
+        const q = await fetch(`/api/quote?quoteId=${quoteId}`)
         if (!q.ok) throw new Error('Quote not found')
 
         const quote = await q.json()
