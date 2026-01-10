@@ -12,13 +12,16 @@ export default function ApproveQuotePage() {
   useEffect(() => {
     async function run() {
       try {
-        const q = await fetch(`/api/quotes/${quoteId}`)
-        if (!q.ok) throw new Error()
+        // Correct API endpoint
+        const q = await fetch(`/api/quote/${quoteId}`)
+        if (!q.ok) throw new Error('Quote not found')
 
         const quote = await q.json()
         const line = quote.lines?.[0]
 
-        if (!line?.selected_quote_item_id) throw new Error()
+        if (!line?.selected_quote_item_id) {
+          throw new Error('No selected quote item')
+        }
 
         const res = await fetch('/api/quotes/approve', {
           method: 'POST',
@@ -30,10 +33,11 @@ export default function ApproveQuotePage() {
           })
         })
 
-        if (!res.ok) throw new Error()
+        if (!res.ok) throw new Error('Approve failed')
 
         router.push(`/admin/quotes/${quoteId}`)
-      } catch {
+      } catch (err) {
+        console.error(err)
         alert('Error approving quote')
       }
     }
