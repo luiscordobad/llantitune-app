@@ -8,10 +8,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-/* =========================================================
-   POST /api/quote
-   Crea cotización + líneas + items usando INVENTARIO REAL
-========================================================= */
 export async function POST(req: Request) {
   try {
     const body = await req.json()
@@ -20,44 +16,30 @@ export async function POST(req: Request) {
       customerName,
       customerEmail,
       customerPhone,
-      vehicles,
       lines,
       markup,
-      install,
-      extras,
-      minStock,
-      depositAmount,
-      promisedAt,
-      internalNotes
+      minStock
     } = body
 
-    /* 1️⃣ Crear cotización */
     const { data: quote, error: quoteError } = await supabase
       .from('quotes')
       .insert({
         customer_name: customerName,
         customer_email: customerEmail,
         customer_phone: customerPhone,
-        deposit_amount: depositAmount,
-        promised_at: promisedAt,
-        internal_notes: internalNotes,
         status: 'DRAFT'
       })
       .select()
       .single()
 
     if (quoteError || !quote) {
-      return NextResponse.json(
-        { error: 'Failed to create quote' },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: 'Failed to create quote' }, { status: 500 })
     }
 
-    /* 2️⃣ Crear líneas + buscar inventario */
-    const createdLines: any[] = []
+    const responseLines: any[] = []
 
     for (const line of lines) {
-      const { data: ql, error: lineError } = await supabase
+      const { data: ql } = await supabase
         .from('quote_lines')
         .insert({
           quote_id: quote.quote_id,
@@ -70,19 +52,16 @@ export async function POST(req: Request) {
         .select()
         .single()
 
-      if (lineError || !ql) continue
+      if (!ql) continue
 
-      /* 3️⃣ Buscar inventario REAL */
-      const { data: inventory, error: invError } = await supabase
+      const { data: inventory } = await supabase
         .from('inventory')
         .select('*')
         .eq('size', ql.size)
         .gte('stock', minStock)
-        .order('tier_label', { ascending: true })
 
-      // Si no hay stock suficiente, regresamos línea vacía
-      if (invError || !inventory || inventory.length === 0) {
-        createdLines.push({
+      if (!inventory || inventory.length === 0) {
+        responseLines.push({
           lineId: ql.line_id,
           size: ql.size,
           requestedQty: ql.requested_qty,
@@ -94,10 +73,9 @@ export async function POST(req: Request) {
         continue
       }
 
-      /* 4️⃣ Calcular precios con markup */
-      const optionsToInsert = inventory.map(inv => {
-        const quotedQty = Math.min(inv.stock, ql.requested_qty)
+      const itemsToInsert = inventory.map(inv => {
         const priceEach = Math.round(inv.cost * (1 + markup / 100))
+        const qty = Math.min(inv.stock, ql.requested_qty)
 
         return {
           line_id: ql.line_id,
@@ -105,21 +83,19 @@ export async function POST(req: Request) {
           model: inv.model,
           tier_label: inv.tier_label,
           stock: inv.stock,
-          quoted_qty: quotedQty,
+          quoted_qty: qty,
           price_each: priceEach,
-          total_tires: priceEach * quotedQty,
+          total_tires: priceEach * qty,
           included: true
         }
       })
 
-      /* 5️⃣ Insertar items */
       const { data: items } = await supabase
         .from('quote_items')
-        .insert(optionsToInsert)
+        .insert(itemsToInsert)
         .select()
 
-      /* 6️⃣ Armar respuesta para frontend */
-      createdLines.push({
+      responseLines.push({
         lineId: ql.line_id,
         size: ql.size,
         requestedQty: ql.requested_qty,
@@ -140,67 +116,29 @@ export async function POST(req: Request) {
       })
     }
 
-    /* 7️⃣ Respuesta EXACTA que espera el frontend */
     return NextResponse.json({
       quoteId: quote.quote_id,
       quoteNumber: 'BORRADOR',
-      lines: createdLines
+      lines: responseLines
     })
-  } catch (err) {
-    return NextResponse.json(
-      { error: 'Invalid request body' },
-      { status: 400 }
-    )
+  } catch (e) {
+    return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
   }
 }
 
-/* =========================================================
-   GET /api/quote?quoteId=...
-   Consulta cotización existente
-========================================================= */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const quoteId = searchParams.get('quoteId')
 
   if (!quoteId) {
-    return NextResponse.json(
-      { error: 'quoteId is required' },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: 'quoteId required' }, { status: 400 })
   }
 
-  const { data: quote, error: quoteError } = await supabase
+  const { data: quote } = await supabase
     .from('quotes')
     .select('*')
     .eq('quote_id', quoteId)
     .single()
 
-  if (quoteError || !quote) {
-    return NextResponse.json(
-      { error: 'Quote not found' },
-      { status: 404 }
-    )
-  }
-
-  const { data: lines } = await supabase
-    .from('quote_lines')
-    .select('*')
-    .eq('quote_id', quoteId)
-
-  const lineIds = lines?.map(l => l.line_id) ?? []
-
-  const { data: items } = lineIds.length
-    ? await supabase
-        .from('quote_items')
-        .select('*')
-        .in('line_id', lineIds)
-    : { data: [] }
-
-  return NextResponse.json({
-    ...quote,
-    quote_lines: lines?.map(line => ({
-      ...line,
-      quote_items: items?.filter(i => i.line_id === line.line_id) ?? []
-    })) ?? []
-  })
+  return NextResponse.json(quote)
 }
