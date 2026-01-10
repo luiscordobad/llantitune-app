@@ -8,25 +8,12 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-/* =========================================================
-   POST /api/quote
-   Paso 4 – buscar llantas desde master_tires + offers
-========================================================= */
 export async function POST(req: Request) {
   try {
     const body = await req.json()
+    const { customerName, customerEmail, customerPhone, lines, markup, minStock } = body
 
-    const {
-      customerName,
-      customerEmail,
-      customerPhone,
-      lines,
-      markup,
-      minStock
-    } = body
-
-    /* 1️⃣ Crear cotización */
-    const { data: quote, error: quoteError } = await supabase
+    const { data: quote } = await supabase
       .from('quotes')
       .insert({
         customer_name: customerName,
@@ -37,17 +24,9 @@ export async function POST(req: Request) {
       .select()
       .single()
 
-    if (quoteError || !quote) {
-      return NextResponse.json(
-        { error: 'Failed to create quote' },
-        { status: 500 }
-      )
-    }
-
     const responseLines: any[] = []
 
     for (const line of lines) {
-      /* 2️⃣ Crear línea */
       const { data: ql } = await supabase
         .from('quote_lines')
         .insert({
@@ -63,50 +42,40 @@ export async function POST(req: Request) {
 
       if (!ql) continue
 
-      /* 3️⃣ Buscar llantas base */
+      // 1️⃣ Catálogo
       const { data: tires } = await supabase
         .from('master_tires')
         .select('tire_id, brand, model, load_speed')
         .eq('size', ql.size)
 
-      if (!tires || tires.length === 0) {
-        responseLines.push({
-          lineId: ql.line_id,
-          size: ql.size,
-          requestedQty: ql.requested_qty,
-          vehicleMake: ql.vehicle_make,
-          vehicleModel: ql.vehicle_model,
-          vehicleYear: ql.vehicle_year,
-          options: []
-        })
+      if (!tires?.length) {
+        responseLines.push({ ...ql, options: [] })
         continue
       }
 
       const tireIds = tires.map(t => t.tire_id)
 
-      /* 4️⃣ Buscar ofertas (AQUÍ está stock y precio) */
+      // 2️⃣ Oferta MÁS RECIENTE
       const { data: offers } = await supabase
         .from('offers')
         .select('*')
         .in('tire_id', tireIds)
         .eq('size', ql.size)
-        .gte('stock', minStock)
+        .order('snapshot_date', { ascending: false })
 
-      if (!offers || offers.length === 0) {
-        responseLines.push({
-          lineId: ql.line_id,
-          size: ql.size,
-          requestedQty: ql.requested_qty,
-          vehicleMake: ql.vehicle_make,
-          vehicleModel: ql.vehicle_model,
-          vehicleYear: ql.vehicle_year,
-          options: []
-        })
+      console.log('OFFERS RAW:', offers?.length)
+
+      if (!offers?.length) {
+        responseLines.push({ ...ql, options: [] })
         continue
       }
 
-      /* 5️⃣ Armar items */
-      const itemsToInsert = offers.map(off => {
+      // 3️⃣ Filtrar stock AQUÍ (no en SQL)
+      const validOffers = offers.filter(o => Number(o.stock) >= Number(minStock))
+
+      console.log('OFFERS AFTER STOCK:', validOffers.length)
+
+      const itemsToInsert = validOffers.map(off => {
         const tire = tires.find(t => t.tire_id === off.tire_id)
         if (!tire) return null
 
@@ -115,9 +84,9 @@ export async function POST(req: Request) {
 
         return {
           line_id: ql.line_id,
-          brand: tire.brand ?? off.brand,
-          model: tire.model ?? off.model,
-          tier_label: off.provider, // o lo que uses como gama
+          brand: tire.brand,
+          model: tire.model,
+          tier_label: off.provider,
           stock: Number(off.stock),
           quoted_qty: qty,
           price_each: priceEach,
@@ -127,15 +96,7 @@ export async function POST(req: Request) {
       }).filter(Boolean)
 
       if (!itemsToInsert.length) {
-        responseLines.push({
-          lineId: ql.line_id,
-          size: ql.size,
-          requestedQty: ql.requested_qty,
-          vehicleMake: ql.vehicle_make,
-          vehicleModel: ql.vehicle_model,
-          vehicleYear: ql.vehicle_year,
-          options: []
-        })
+        responseLines.push({ ...ql, options: [] })
         continue
       }
 
@@ -151,17 +112,7 @@ export async function POST(req: Request) {
         vehicleMake: ql.vehicle_make,
         vehicleModel: ql.vehicle_model,
         vehicleYear: ql.vehicle_year,
-        options: items?.map(i => ({
-          quoteItemId: i.quote_item_id,
-          brand: i.brand,
-          model: i.model,
-          tierLabel: i.tier_label,
-          stock: i.stock,
-          quotedQty: i.quoted_qty,
-          priceEach: i.price_each,
-          totalTires: i.total_tires,
-          included: i.included
-        })) ?? []
+        options: items ?? []
       })
     }
 
@@ -171,32 +122,7 @@ export async function POST(req: Request) {
       lines: responseLines
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: 'Invalid request body' },
-      { status: 400 }
-    )
+    console.error(err)
+    return NextResponse.json({ error: 'Server error' }, { status: 500 })
   }
-}
-
-/* =========================================================
-   GET /api/quote
-========================================================= */
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url)
-  const quoteId = searchParams.get('quoteId')
-
-  if (!quoteId) {
-    return NextResponse.json(
-      { error: 'quoteId is required' },
-      { status: 400 }
-    )
-  }
-
-  const { data: quote } = await supabase
-    .from('quotes')
-    .select('*')
-    .eq('quote_id', quoteId)
-    .single()
-
-  return NextResponse.json(quote)
 }
