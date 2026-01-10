@@ -1,14 +1,13 @@
-
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 
 export async function POST(req: Request) {
-  const { quote_id, line_id, quote_item_id } = await req.json()
+  const { quote_id } = await req.json()
 
-  if (!quote_id || !line_id || !quote_item_id) {
-    return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
+  if (!quote_id) {
+    return NextResponse.json({ error: 'quote_id is required' }, { status: 400 })
   }
 
   const supabase = createClient(
@@ -16,19 +15,45 @@ export async function POST(req: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  await supabase
-    .from('quote_lines')
-    .update({ selected_quote_item_id: quote_item_id })
-    .eq('line_id', line_id)
-
-  await supabase
+  // 1️⃣ Obtener la cotización y validar selección
+  const { data: quote, error: quoteError } = await supabase
     .from('quotes')
-    .update({ status: 'APPROVED', approved_at: new Date().toISOString() })
-    .eq('quote_id', quote_id)
+    .select('id, selected_quote_item_id, status')
+    .eq('id', quote_id)
+    .single()
 
-  await supabase
-    .from('orders')
-    .insert({ quote_id, status: 'OPEN' })
+  if (quoteError || !quote) {
+    return NextResponse.json({ error: 'Quote not found' }, { status: 404 })
+  }
+
+  if (!quote.selected_quote_item_id) {
+    return NextResponse.json(
+      { error: 'No selected quote item' },
+      { status: 400 }
+    )
+  }
+
+  // 2️⃣ Aprobar cotización
+  const { error: approveError } = await supabase
+    .from('quotes')
+    .update({
+      status: 'APPROVED',
+      approved_at: new Date().toISOString(),
+    })
+    .eq('id', quote_id)
+
+  if (approveError) {
+    return NextResponse.json(
+      { error: 'Failed to approve quote' },
+      { status: 500 }
+    )
+  }
+
+  // 3️⃣ Crear orden
+  await supabase.from('orders').insert({
+    quote_id,
+    status: 'OPEN',
+  })
 
   return NextResponse.json({ ok: true })
 }
