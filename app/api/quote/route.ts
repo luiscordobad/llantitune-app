@@ -45,20 +45,29 @@ export async function GET(request: Request) {
 
 /**
  * POST /api/quote
- * Usado para cotizar y mostrar llantas disponibles
- * ⚠️ NO rompe el flujo existente
+ * Usado para buscar llantas desde master_tires
  */
 export async function POST(request: Request) {
   try {
     const body = await request.json()
+    const { size } = body
 
-    // 🔒 IMPORTANTE:
-    // Aquí NO se cambia tu lógica actual de cotizar.
-    // Solo se asegura que el endpoint exista y responda JSON.
+    if (!size) {
+      return NextResponse.json({ error: 'size is required' }, { status: 400 })
+    }
+
+    const { data, error } = await supabase
+      .from('master_tires')
+      .select('*')
+      .eq('size', size)
+      .limit(50)
+
+    if (error) {
+      return NextResponse.json({ error: 'Error fetching tires' }, { status: 500 })
+    }
 
     return NextResponse.json({
-      ok: true,
-      data: body
+      tires: data
     })
   } catch (err) {
     console.error('POST /api/quote error', err)
