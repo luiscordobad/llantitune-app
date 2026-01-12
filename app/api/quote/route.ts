@@ -6,7 +6,25 @@ import { normalizeSizeAny } from "@/lib/normalize";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { lines, providers, minStock = 1, markup = 1.3 } = body;
+
+    const lines = body?.draft?.lines ?? [];
+    const providers = body?.providers ?? [];
+    const minStock = Number(body?.minStock ?? 1);
+    const markup = Number(body?.markup ?? 1.3);
+
+    if (!Array.isArray(lines) || lines.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: "No lines provided" },
+        { status: 400 }
+      );
+    }
+
+    if (!Array.isArray(providers) || providers.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: "No providers provided" },
+        { status: 400 }
+      );
+    }
 
     const options: any[] = [];
 
@@ -46,7 +64,7 @@ export async function POST(req: Request) {
 
         for (const offer of latestByTire.values()) {
           const stock = Number(offer.stock ?? 0);
-          if (stock <= 0) continue;
+          if (stock < minStock) continue;
 
           const quotedQty = Math.min(stock, requestedQty);
 
@@ -61,7 +79,7 @@ export async function POST(req: Request) {
             qtyQuoted: quotedQty,
             limited: stock < requestedQty,
             cost: offer.cost,
-            price: Math.round(offer.cost * markup),
+            price: Math.round(Number(offer.cost) * markup),
             snapshot_date: offer.snapshot_date,
           });
         }
