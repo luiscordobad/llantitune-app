@@ -22,9 +22,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // =================================================
-    // 1️⃣ Resolve draft (body OR DB)
-    // =================================================
     let draft = draftFromBody;
 
     if (!draft && quoteId) {
@@ -71,9 +68,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // =================================================
-    // 2️⃣ Create quote
-    // =================================================
     const quoteNumber = generateQuoteNumber();
 
     const { data: quote, error: quoteErr } = await supabaseAdmin
@@ -95,9 +89,6 @@ export async function POST(req: Request) {
 
     let grandTotal = 0;
 
-    // =================================================
-    // 3️⃣ Lines + items
-    // =================================================
     for (const ln of draft.lines) {
       const vehicleLabel = [
         ln.vehicle_make,
@@ -152,9 +143,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // =================================================
-    // 4️⃣ Totals + mark sent
-    // =================================================
     await supabaseAdmin
       .from("quotes")
       .update({ grand_total: grandTotal })
