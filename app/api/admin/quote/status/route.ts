@@ -1,4 +1,5 @@
-import { NextResponse } from "next/serverBR import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 function generateQuoteNumber() {
   const d = new Date();
@@ -12,7 +13,7 @@ function generateQuoteNumber() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { quoteId, status, draft } = body;
+    const { status, draft } = body;
 
     if (status !== "SENT") {
       return NextResponse.json(
