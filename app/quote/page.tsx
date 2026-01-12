@@ -321,27 +321,39 @@ export default function QuotePage() {
   }
 
   async function sendAndAssignFolio() {
-    if (!draft?.quoteId) return;
-    if (!canProceedToStep5()) return setStatus("Selecciona al menos 1 opción por cada medida.");
-    setStatus("Enviando y asignando folio...");
-    const res = await fetch("/api/admin/quote/status", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ quoteId: draft.quoteId, status: "SENT" }),
-    });
-    const d = await res.json();
-    if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
-    setStatus("✅ ENVIADA. Ya puedes mandarla por WhatsApp o correo.");
-    if (d.quoteNumber) setDraft((p: any) => ({ ...p, quoteNumber: d.quoteNumber }));
-    // also mark as sent in local state
-    setDraft((p: any) => ({ ...p, status: 'SENT' }));
+  if (!draft) return;
+  if (!canProceedToStep5()) {
+    return setStatus("Selecciona al menos 1 opción por cada medida.");
   }
 
-  function openWhatsapp() {
-    const txt = buildPreviewText();
-    const url = "https://wa.me/?text=" + encodeURIComponent(txt);
-    window.open(url, "_blank");
+  setStatus("Enviando y asignando folio...");
+
+  const res = await fetch("/api/admin/quote/status", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      status: "SENT",
+      draft, // 👈 CLAVE: enviamos TODO el draft al backend
+    }),
+  });
+
+  const d = await res.json();
+
+  if (!res.ok) {
+    return setStatus("Error: " + (d.error ?? "unknown"));
   }
+
+  setStatus("✅ ENVIADA. Ya puedes mandarla por WhatsApp o correo.");
+
+  // actualizar número de cotización real
+  if (d.quoteNumber) {
+    setDraft((p: any) => ({
+      ...p,
+      quoteNumber: d.quoteNumber,
+      status: "SENT",
+    }));
+  }
+}
 
   function prepareEmail() {
     const subject = `Llantitune Cotización ${draft?.quoteNumber ?? "BORRADOR"}`;
