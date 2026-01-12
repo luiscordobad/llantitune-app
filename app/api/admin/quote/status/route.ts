@@ -13,11 +13,8 @@ function generateQuoteNumber() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { quoteId, status } = body;
+    const { status, quoteId, draft: draftFromBody } = body;
 
-    // =========================
-    // 1️⃣ Validate input
-    // =========================
     if (status !== "SENT") {
       return NextResponse.json(
         { ok: false, error: "Only SENT status is supported" },
@@ -25,58 +22,58 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!quoteId) {
-      return NextResponse.json(
-        { ok: false, error: "quoteId is required" },
-        { status: 400 }
-      );
+    // =================================================
+    // 1️⃣ Resolve draft (body OR DB)
+    // =================================================
+    let draft = draftFromBody;
+
+    if (!draft && quoteId) {
+      const { data, error } = await supabaseAdmin
+        .from("quote_drafts")
+        .select(`
+          id,
+          customer_name,
+          customer_phone,
+          customer_email,
+          lines:quote_draft_lines (
+            id,
+            size,
+            requested_qty,
+            vehicle_make,
+            vehicle_model,
+            vehicle_year,
+            options:quote_draft_items (
+              tier_label,
+              brand,
+              model,
+              provider,
+              price_each,
+              quoted_qty,
+              total_tires,
+              included
+            )
+          )
+        `)
+        .eq("id", quoteId)
+        .single();
+
+      if (error) {
+        console.error("DRAFT LOAD ERROR:", error);
+      }
+
+      draft = data;
     }
 
-    // =========================
-    // 2️⃣ Load draft from DB
-    // =========================
-    const { data: draft, error: draftErr } = await supabaseAdmin
-      .from("quote_drafts")
-      .select(
-        `
-        id,
-        customer_name,
-        customer_phone,
-        customer_email,
-        lines:quote_draft_lines (
-          id,
-          size,
-          requested_qty,
-          vehicle_make,
-          vehicle_model,
-          vehicle_year,
-          options:quote_draft_items (
-            id,
-            tier_label,
-            brand,
-            model,
-            provider,
-            price_each,
-            quoted_qty,
-            total_tires,
-            included
-          )
-        )
-      `
-      )
-      .eq("id", quoteId)
-      .single();
-
-    if (draftErr || !draft || !draft.lines?.length) {
+    if (!draft || !Array.isArray(draft.lines) || !draft.lines.length) {
       return NextResponse.json(
         { ok: false, error: "Draft with lines is required" },
         { status: 400 }
       );
     }
 
-    // =========================
-    // 3️⃣ Generate quote
-    // =========================
+    // =================================================
+    // 2️⃣ Create quote
+    // =================================================
     const quoteNumber = generateQuoteNumber();
 
     const { data: quote, error: quoteErr } = await supabaseAdmin
@@ -98,9 +95,9 @@ export async function POST(req: Request) {
 
     let grandTotal = 0;
 
-    // =========================
-    // 4️⃣ Insert lines + items
-    // =========================
+    // =================================================
+    // 3️⃣ Lines + items
+    // =================================================
     for (const ln of draft.lines) {
       const vehicleLabel = [
         ln.vehicle_make,
@@ -151,27 +148,24 @@ export async function POST(req: Request) {
             total,
           });
 
-        if (itemErr) {
-          throw itemErr;
-        }
+        if (itemErr) throw itemErr;
       }
     }
 
-    // =========================
-    // 5️⃣ Update totals
-    // =========================
+    // =================================================
+    // 4️⃣ Totals + mark sent
+    // =================================================
     await supabaseAdmin
       .from("quotes")
       .update({ grand_total: grandTotal })
       .eq("id", quote.id);
 
-    // =========================
-    // 6️⃣ Mark draft as sent
-    // =========================
-    await supabaseAdmin
-      .from("quote_drafts")
-      .update({ status: "SENT" })
-      .eq("id", quoteId);
+    if (quoteId) {
+      await supabaseAdmin
+        .from("quote_drafts")
+        .update({ status: "SENT" })
+        .eq("id", quoteId);
+    }
 
     return NextResponse.json({
       ok: true,
