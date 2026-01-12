@@ -1,22 +1,24 @@
+
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+
+/**
+ * INCLUDE endpoint – v9 SAFE
+ * Frontend usa este endpoint para togglear included,
+ * pero en v7+ las opciones aún no viven en BD.
+ * => Este endpoint debe ser NO-OP y responder OK.
+ */
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const quoteItemId = body.quoteItemId as string;
-    const included = !!body.included;
-    if (!quoteItemId) return NextResponse.json({ error: "quoteItemId required" }, { status: 400 });
 
-    const { error } = await supabaseAdmin
-      .from("quote_items")
-      .update({ included })
-      .eq("quote_item_id", quoteItemId);
+    if (!body?.quoteItemId) {
+      return NextResponse.json({ ok: false, error: "Missing quoteItemId" }, { status: 400 });
+    }
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
+    // No persistimos todavía (fase draft)
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "unknown" }, { status: 500 });
+  } catch (err: any) {
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }
 }
