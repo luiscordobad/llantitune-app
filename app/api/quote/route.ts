@@ -1,128 +1,82 @@
-import { createClient } from '@supabase/supabase-js'
-import { NextResponse } from 'next/server'
 
-export const runtime = 'nodejs'
-
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { normalizeSizeAny } from "@/lib/normalize";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
-    const { customerName, customerEmail, customerPhone, lines, markup, minStock } = body
+    const body = await req.json();
+    const { lines, providers, minStock = 1, markup = 1.3 } = body;
 
-    const { data: quote } = await supabase
-      .from('quotes')
-      .insert({
-        customer_name: customerName,
-        customer_email: customerEmail,
-        customer_phone: customerPhone,
-        status: 'DRAFT'
-      })
-      .select()
-      .single()
-
-    const responseLines: any[] = []
+    const options: any[] = [];
 
     for (const line of lines) {
-      const { data: ql } = await supabase
-        .from('quote_lines')
-        .insert({
-          quote_id: quote.quote_id,
-          size: line.size,
-          requested_qty: line.qty,
-          vehicle_make: line.vehicleMake,
-          vehicle_model: line.vehicleModel,
-          vehicle_year: line.vehicleYear
-        })
-        .select()
-        .single()
+      const normalizedSize = normalizeSizeAny(line.size);
+      const requestedQty = Number(line.qty ?? 1);
 
-      if (!ql) continue
+      for (const provider of providers) {
+        const { data, error } = await supabaseAdmin
+          .from("offers")
+          .select(`
+            provider,
+            tire_id,
+            brand,
+            model,
+            load_speed,
+            size,
+            stock,
+            cost,
+            snapshot_date
+          `)
+          .eq("provider", provider)
+          .eq("size", normalizedSize)
+          .order("snapshot_date", { ascending: false });
 
-      // 1️⃣ Catálogo
-      const { data: tires } = await supabase
-        .from('master_tires')
-        .select('tire_id, brand, model, load_speed')
-        .eq('size', ql.size)
-
-      if (!tires?.length) {
-        responseLines.push({ ...ql, options: [] })
-        continue
-      }
-
-      const tireIds = tires.map(t => t.tire_id)
-
-      // 2️⃣ Oferta MÁS RECIENTE
-      const { data: offers } = await supabase
-        .from('offers')
-        .select('*')
-        .in('tire_id', tireIds)
-        .eq('size', ql.size)
-        .order('snapshot_date', { ascending: false })
-
-      console.log('OFFERS RAW:', offers?.length)
-
-      if (!offers?.length) {
-        responseLines.push({ ...ql, options: [] })
-        continue
-      }
-
-      // 3️⃣ Filtrar stock AQUÍ (no en SQL)
-      const validOffers = offers.filter(o => Number(o.stock) >= Number(minStock))
-
-      console.log('OFFERS AFTER STOCK:', validOffers.length)
-
-      const itemsToInsert = validOffers.map(off => {
-        const tire = tires.find(t => t.tire_id === off.tire_id)
-        if (!tire) return null
-
-        const qty = Math.min(Number(off.stock), ql.requested_qty)
-        const priceEach = Math.round(Number(off.cost) * (1 + markup / 100))
-
-        return {
-          line_id: ql.line_id,
-          brand: tire.brand,
-          model: tire.model,
-          tier_label: off.provider,
-          stock: Number(off.stock),
-          quoted_qty: qty,
-          price_each: priceEach,
-          total_tires: priceEach * qty,
-          included: true
+        if (error) {
+          console.error(error);
+          continue;
         }
-      }).filter(Boolean)
 
-      if (!itemsToInsert.length) {
-        responseLines.push({ ...ql, options: [] })
-        continue
+        const latestByTire = new Map<string, any>();
+        for (const row of data ?? []) {
+          if (!latestByTire.has(row.tire_id)) {
+            latestByTire.set(row.tire_id, row);
+          }
+        }
+
+        for (const offer of latestByTire.values()) {
+          const stock = Number(offer.stock ?? 0);
+          if (stock <= 0) continue;
+
+          const quotedQty = Math.min(stock, requestedQty);
+
+          options.push({
+            tire_id: offer.tire_id,
+            provider: offer.provider,
+            brand: offer.brand,
+            model: offer.model,
+            load_speed: offer.load_speed,
+            size: offer.size,
+            qtyRequested: requestedQty,
+            qtyQuoted: quotedQty,
+            limited: stock < requestedQty,
+            cost: offer.cost,
+            price: Math.round(offer.cost * markup),
+            snapshot_date: offer.snapshot_date,
+          });
+        }
       }
-
-      const { data: items } = await supabase
-        .from('quote_items')
-        .insert(itemsToInsert)
-        .select()
-
-      responseLines.push({
-        lineId: ql.line_id,
-        size: ql.size,
-        requestedQty: ql.requested_qty,
-        vehicleMake: ql.vehicle_make,
-        vehicleModel: ql.vehicle_model,
-        vehicleYear: ql.vehicle_year,
-        options: items ?? []
-      })
     }
 
     return NextResponse.json({
-      quoteId: quote.quote_id,
-      quoteNumber: 'BORRADOR',
-      lines: responseLines
-    })
-  } catch (err) {
-    console.error(err)
-    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+      ok: true,
+      options,
+    });
+  } catch (err: any) {
+    console.error(err);
+    return NextResponse.json(
+      { ok: false, error: err.message },
+      { status: 500 }
+    );
   }
 }
