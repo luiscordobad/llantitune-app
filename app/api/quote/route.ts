@@ -7,10 +7,14 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const lines = body?.draft?.lines ?? [];
+    const vehicles = body?.draft?.vehicles ?? [];
     const providers = body?.providers ?? [];
     const minStock = Number(body?.minStock ?? 1);
     const markup = Number(body?.markup ?? 1.3);
+
+    const lines = Array.isArray(vehicles)
+      ? vehicles.flatMap((v: any) => v.lines ?? [])
+      : [];
 
     if (!Array.isArray(lines) || lines.length === 0) {
       return NextResponse.json(
