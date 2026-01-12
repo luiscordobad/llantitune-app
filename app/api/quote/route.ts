@@ -7,11 +7,8 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    // ===============================
-    // 1️⃣ OBTENER LINES (FORMATO VIEJO Y NUEVO)
-    // ===============================
+    // 1️⃣ Obtener lines (compatibles viejo y nuevo)
     let lines: any[] = [];
-
     if (Array.isArray(body?.lines)) {
       lines = body.lines;
     } else if (Array.isArray(body?.draft?.vehicles)) {
@@ -19,17 +16,11 @@ export async function POST(req: Request) {
     }
 
     if (!Array.isArray(lines) || lines.length === 0) {
-      return NextResponse.json(
-        { ok: false, error: "No lines provided" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "No lines provided" }, { status: 400 });
     }
 
-    // ===============================
-    // 2️⃣ OBTENER PROVIDERS (CON FALLBACK)
-    // ===============================
+    // 2️⃣ Providers (fallback automático)
     let providers: string[] = [];
-
     if (Array.isArray(body?.providers) && body.providers.length > 0) {
       providers = body.providers;
     } else {
@@ -38,91 +29,93 @@ export async function POST(req: Request) {
         .select("provider")
         .neq("provider", null);
 
-      providers = Array.from(new Set((data ?? []).map(p => p.provider)));
+      providers = Array.from(new Set((data ?? []).map((p: any) => p.provider)));
     }
 
-    if (!providers || providers.length === 0) {
-      return NextResponse.json(
-        { ok: false, error: "No providers available" },
-        { status: 500 }
-      );
-    }
-
-    // ===============================
-    // 3️⃣ PARÁMETROS DE NEGOCIO
-    // ===============================
     const minStock = Number(body?.minStock ?? 1);
-    const markup = Number(body?.markup ?? 1.3);
+    const markupPct = Number(body?.markup ?? 30) / 100;
 
-    const options: any[] = [];
+    // 3️⃣ Buscar todas las ofertas
+    const flatOptions: any[] = [];
 
-    // ===============================
-    // 4️⃣ BUSCAR LLANTAS
-    // ===============================
-    for (const line of lines) {
-      const normalizedSize = normalizeSizeAny(line.size);
-      const requestedQty = Number(line.qty ?? 1);
+    for (const ln of lines) {
+      const size = normalizeSizeAny(ln.size);
+      const requestedQty = Number(ln.qty ?? 1);
 
       for (const provider of providers) {
-        const { data, error } = await supabaseAdmin
+        const { data } = await supabaseAdmin
           .from("offers")
-          .select(`
-            provider,
-            tire_id,
-            brand,
-            model,
-            load_speed,
-            size,
-            stock,
-            cost,
-            snapshot_date
-          `)
+          .select("provider,tire_id,brand,model,load_speed,size,stock,cost,snapshot_date")
           .eq("provider", provider)
-          .eq("size", normalizedSize)
+          .eq("size", size)
           .order("snapshot_date", { ascending: false });
 
-        if (error || !data) continue;
+        if (!data) continue;
 
-        const latestByTire = new Map<string, any>();
+        const latest = new Map<string, any>();
         for (const row of data) {
-          if (!latestByTire.has(row.tire_id)) {
-            latestByTire.set(row.tire_id, row);
-          }
+          if (!latest.has(row.tire_id)) latest.set(row.tire_id, row);
         }
 
-        for (const offer of latestByTire.values()) {
-          const stock = Number(offer.stock ?? 0);
+        for (const o of latest.values()) {
+          const stock = Number(o.stock ?? 0);
           if (stock < minStock) continue;
 
           const quotedQty = Math.min(stock, requestedQty);
+          const priceEach = Math.round(Number(o.cost) * (1 + markupPct));
 
-          options.push({
-            tire_id: offer.tire_id,
-            provider: offer.provider,
-            brand: offer.brand,
-            model: offer.model,
-            load_speed: offer.load_speed,
-            size: offer.size,
-            qtyRequested: requestedQty,
-            qtyQuoted: quotedQty,
-            limited: stock < requestedQty,
-            cost: offer.cost,
-            price: Math.round(Number(offer.cost) * markup),
-            snapshot_date: offer.snapshot_date,
+          flatOptions.push({
+            size,
+            provider: o.provider,
+            brand: o.brand,
+            model: o.model,
+            loadSpeed: o.load_speed,
+            stock,
+            quotedQty,
+            priceEach,
+            totalTires: priceEach * quotedQty,
           });
         }
       }
     }
 
+    // 4️⃣ Construir estructura EXACTA que espera el frontend
+    const linesOut = lines.map((ln, idx) => {
+      const size = normalizeSizeAny(ln.size);
+      const opts = flatOptions
+        .filter(o => o.size === size)
+        .map((o, j) => ({
+          quoteItemId: `${idx}-${j}`,
+          tierLabel: o.provider,
+          brand: o.brand,
+          model: o.model,
+          loadSpeed: o.loadSpeed,
+          stock: o.stock,
+          quotedQty: o.quotedQty,
+          priceEach: o.priceEach,
+          totalTires: o.totalTires,
+          included: true,
+        }));
+
+      return {
+        lineId: String(idx),
+        size: ln.size,
+        requestedQty: ln.qty,
+        vehicleMake: ln.vehicleMake ?? null,
+        vehicleModel: ln.vehicleModel ?? null,
+        vehicleYear: ln.vehicleYear ?? null,
+        options: opts,
+      };
+    });
+
     return NextResponse.json({
       ok: true,
-      options,
+      quoteId: crypto.randomUUID(),
+      quoteNumber: "BORRADOR",
+      lines: linesOut,
     });
   } catch (err: any) {
     console.error(err);
-    return NextResponse.json(
-      { ok: false, error: err.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }
 }
