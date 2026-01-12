@@ -7,18 +7,24 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const vehicles = body?.draft?.vehicles ?? [];
+    // ✅ COMPATIBLE CON FORMATO VIEJO Y NUEVO
+    let lines: any[] = [];
+
+    if (Array.isArray(body?.lines)) {
+      // formato viejo (el que sí funcionaba)
+      lines = body.lines;
+    } else if (Array.isArray(body?.draft?.vehicles)) {
+      // formato nuevo
+      lines = body.draft.vehicles.flatMap((v: any) => v.lines ?? []);
+    }
+
     const providers = body?.providers ?? [];
     const minStock = Number(body?.minStock ?? 1);
     const markup = Number(body?.markup ?? 1.3);
 
-    const lines = Array.isArray(vehicles)
-      ? vehicles.flatMap((v: any) => v.lines ?? [])
-      : [];
-
     if (!Array.isArray(lines) || lines.length === 0) {
       return NextResponse.json(
-        { ok: false, error: "No lines provided" },
+        { ok: false, error: "No lines provided", debug: body },
         { status: 400 }
       );
     }
@@ -54,10 +60,7 @@ export async function POST(req: Request) {
           .eq("size", normalizedSize)
           .order("snapshot_date", { ascending: false });
 
-        if (error) {
-          console.error(error);
-          continue;
-        }
+        if (error) continue;
 
         const latestByTire = new Map<string, any>();
         for (const row of data ?? []) {
@@ -90,12 +93,8 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({
-      ok: true,
-      options,
-    });
+    return NextResponse.json({ ok: true, options });
   } catch (err: any) {
-    console.error(err);
     return NextResponse.json(
       { ok: false, error: err.message },
       { status: 500 }
