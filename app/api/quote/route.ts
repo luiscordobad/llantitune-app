@@ -7,37 +7,58 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    // ✅ COMPATIBLE CON FORMATO VIEJO Y NUEVO
+    // ===============================
+    // 1️⃣ OBTENER LINES (FORMATO VIEJO Y NUEVO)
+    // ===============================
     let lines: any[] = [];
 
     if (Array.isArray(body?.lines)) {
-      // formato viejo (el que sí funcionaba)
       lines = body.lines;
     } else if (Array.isArray(body?.draft?.vehicles)) {
-      // formato nuevo
       lines = body.draft.vehicles.flatMap((v: any) => v.lines ?? []);
     }
 
-    const providers = body?.providers ?? [];
+    if (!Array.isArray(lines) || lines.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: "No lines provided" },
+        { status: 400 }
+      );
+    }
+
+    // ===============================
+    // 2️⃣ OBTENER PROVIDERS (CON FALLBACK)
+    // ===============================
+    let providers: string[] = [];
+
+    if (Array.isArray(body?.providers) && body.providers.length > 0) {
+      providers = body.providers;
+    } else {
+      const { data } = await supabaseAdmin
+        .from("offers")
+        .select("provider")
+        .neq("provider", null);
+
+      providers = Array.from(new Set((data ?? []).map(p => p.provider)));
+    }
+
+    if (!providers || providers.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: "No providers available" },
+        { status: 500 }
+      );
+    }
+
+    // ===============================
+    // 3️⃣ PARÁMETROS DE NEGOCIO
+    // ===============================
     const minStock = Number(body?.minStock ?? 1);
     const markup = Number(body?.markup ?? 1.3);
 
-    if (!Array.isArray(lines) || lines.length === 0) {
-      return NextResponse.json(
-        { ok: false, error: "No lines provided", debug: body },
-        { status: 400 }
-      );
-    }
-
-    if (!Array.isArray(providers) || providers.length === 0) {
-      return NextResponse.json(
-        { ok: false, error: "No providers provided" },
-        { status: 400 }
-      );
-    }
-
     const options: any[] = [];
 
+    // ===============================
+    // 4️⃣ BUSCAR LLANTAS
+    // ===============================
     for (const line of lines) {
       const normalizedSize = normalizeSizeAny(line.size);
       const requestedQty = Number(line.qty ?? 1);
@@ -60,10 +81,10 @@ export async function POST(req: Request) {
           .eq("size", normalizedSize)
           .order("snapshot_date", { ascending: false });
 
-        if (error) continue;
+        if (error || !data) continue;
 
         const latestByTire = new Map<string, any>();
-        for (const row of data ?? []) {
+        for (const row of data) {
           if (!latestByTire.has(row.tire_id)) {
             latestByTire.set(row.tire_id, row);
           }
@@ -93,8 +114,12 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, options });
+    return NextResponse.json({
+      ok: true,
+      options,
+    });
   } catch (err: any) {
+    console.error(err);
     return NextResponse.json(
       { ok: false, error: err.message },
       { status: 500 }
