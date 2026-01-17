@@ -1,132 +1,151 @@
-
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { normalizeSizeAny } from "@/lib/normalize";
 
-type Tier = "Económica" | "Media" | "Premium";
+export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const size = normalizeSizeAny(body.size);
+    const qty = Number(body.qty ?? 4);
+    const markup = Number(body.markup ?? 30);
+    const install = Number(body.install ?? 1000);
+    const extras = Number(body.extras ?? 1000);
+    const minStock = Number(body.minStock ?? 8);
 
-    let lines: any[] = [];
-    if (Array.isArray(body?.lines)) {
-      lines = body.lines;
-    } else if (Array.isArray(body?.draft?.vehicles)) {
-      lines = body.draft.vehicles.flatMap((v: any) => v.lines ?? []);
+    if (!size) return NextResponse.json({ error: "Invalid size" }, { status: 400 });
+
+    const providers = ["Prodynamics", "Cotizador", "INV"];
+    const latest: Record<string, string | null> = {};
+
+    for (const p of providers) {
+      const { data, error } = await supabaseAdmin
+        .from("offers")
+        .select("snapshot_date")
+        .eq("provider", p)
+        .order("snapshot_date", { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+      latest[p] = data?.[0]?.snapshot_date ?? null;
     }
 
-    if (!lines.length) {
-      return NextResponse.json({ ok: false, error: "No lines provided" }, { status: 400 });
+    const all: any[] = [];
+    for (const p of providers) {
+      const snap = latest[p];
+      if (!snap) continue;
+
+      const { data, error } = await supabaseAdmin
+        .from("offers")
+        .select("provider, sku, tire_id, brand, model, load_speed, size, stock, cost, description, snapshot_date")
+        .eq("provider", p)
+        .eq("snapshot_date", snap)
+        .eq("size", size)
+        .gte("stock", minStock);
+
+      if (error) throw error;
+      all.push(...(data ?? []));
     }
 
-    const requestedLines = lines
-      .map((l: any) => ({
-        size: normalizeSizeAny(l.size),
-        rawSize: l.size,
-        qty: Number(l.qty ?? 0),
-        vehicleMake: l.vehicleMake ?? null,
-        vehicleModel: l.vehicleModel ?? null,
-        vehicleYear: l.vehicleYear ?? null,
-      }))
-      .filter(l => l.qty > 0);
+    all.sort((a, b) => Number(a.cost ?? 0) - Number(b.cost ?? 0));
 
-    const minStock = Number(body?.minStock ?? 1);
-    const markupPct = Number(body?.markup ?? 30) / 100;
+    const options = all.slice(0, 50).map((x: any, idx: number) => {
+      const cost = Number(x.cost ?? 0);
+      const priceEach = Math.round(cost * (1 + markup / 100));
+      const totalTires = priceEach * qty;
+      const totalServices = (install + extras) * qty;
+      const total = totalTires + totalServices;
 
-    const { data: offersAll } = await supabaseAdmin
-      .from("offers")
-      .select("provider,tire_id,brand,model,load_speed,size,stock,cost,snapshot_date")
-      .neq("provider", null);
-
-    const linesOut: any[] = [];
-
-    for (let lineIdx = 0; lineIdx < requestedLines.length; lineIdx++) {
-      const ln = requestedLines[lineIdx];
-
-      const relevant = (offersAll ?? [])
-        .filter(o => normalizeSizeAny(o.size) === ln.size)
-        .sort((a, b) => new Date(b.snapshot_date).getTime() - new Date(a.snapshot_date).getTime());
-
-      const byTire = new Map<string, any>();
-
-      for (const o of relevant) {
-        const stock = Number(o.stock ?? 0);
-        if (stock < ln.qty) continue;
-        if (stock < minStock) continue;
-        if (o.cost == null) continue;
-
-        const priceEach = Math.round(Number(o.cost) * (1 + markupPct));
-        const existing = byTire.get(o.tire_id);
-
-        if (!existing || priceEach < existing.priceEach) {
-          byTire.set(o.tire_id, {
-            brand: o.brand,
-            model: o.model,
-            loadSpeed: o.load_speed,
-            stock,
-            quotedQty: ln.qty,
-            priceEach,
-            totalTires: priceEach * ln.qty,
-          });
-        }
-      }
-
-      let opts = Array.from(byTire.values());
-
-      const prices = opts.map(o => o.priceEach).sort((a, b) => a - b);
-      const p33 = prices[Math.floor(prices.length * 0.33)] ?? 0;
-      const p66 = prices[Math.floor(prices.length * 0.66)] ?? 0;
-
-      const tierOrder: Record<Tier, number> = {
-        "Económica": 1,
-        "Media": 2,
-        "Premium": 3,
+      return {
+        rank: idx + 1,
+        provider: x.provider,
+        sku: x.sku,
+        tireId: x.tire_id,
+        brand: x.brand,
+        model: x.model,
+        loadSpeed: x.load_speed,
+        size: x.size,
+        stock: x.stock,
+        cost,
+        priceEach,
+        totalTires,
+        totalWithServices: total
       };
+    });
 
-      const options = opts.map((o, j) => {
-        let tier: Tier = "Media";
-        if (o.priceEach <= p33) tier = "Económica";
-        else if (o.priceEach > p66) tier = "Premium";
+    const { data: q, error: qErr } = await supabaseAdmin
+      .from("quotes")
+      .insert({
+        customer_name: body.customerName ?? null,
+        customer_phone: body.customerPhone ?? null,
+        vehicle_text: body.vehicle ?? null,
+        size,
+        quantity: qty,
+        urgency: null,
+        preference: null,
+        markup_pct: markup,
+        install_each: install,
+        extras_each: extras,
+        notes: null
+      })
+      .select("quote_id")
+      .single();
 
-        return {
-          quoteItemId: `${lineIdx}-${j}`,
-          tierLabel: tier,
-          brand: o.brand,
-          model: o.model,
-          loadSpeed: o.loadSpeed,
-          stock: o.stock,
-          quotedQty: o.quotedQty,
-          priceEach: o.priceEach,
-          totalTires: o.totalTires,
-          included: true,
-        };
-      });
+    if (qErr) throw qErr;
 
-      options.sort((a, b) =>
-        tierOrder[a.tierLabel as Tier] - tierOrder[b.tierLabel as Tier] ||
-        a.priceEach - b.priceEach
-      );
+    const quoteId = q.quote_id as string;
 
-      linesOut.push({
-        lineId: String(lineIdx),
-        size: ln.rawSize,
-        requestedQty: ln.qty,
-        vehicleMake: ln.vehicleMake,
-        vehicleModel: ln.vehicleModel,
-        vehicleYear: ln.vehicleYear,
-        options,
-      });
+    if (options.length) {
+      const items = options.slice(0, 15).map((o: any) => ({
+        quote_id: quoteId,
+        rank: o.rank,
+        provider: o.provider,
+        sku: o.sku,
+        tire_id: o.tireId,
+        brand: o.brand,
+        model: o.model,
+        load_speed: o.loadSpeed,
+        size: o.size,
+        stock: o.stock,
+        cost: o.cost,
+        price_each: o.priceEach,
+        total_tires: o.totalTires,
+        total_with_services: o.totalWithServices
+      }));
+
+      const { error: iErr } = await supabaseAdmin.from("quote_items").insert(items);
+      if (iErr) throw iErr;
     }
 
-    return NextResponse.json({
-      ok: true,
-      quoteId: crypto.randomUUID(),
-      quoteNumber: "BORRADOR",
-      lines: linesOut,
-    });
-  } catch (err: any) {
-    console.error(err);
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+    const whatsappText =
+`Llantitune ✅ Cotización ${size} (x${qty})
+${body.customerName ? `Cliente: ${body.customerName}\n` : ""}${body.vehicle ? `Vehículo: ${body.vehicle}\n` : ""}
+Markup: ${markup}%
+Instalación: $${install} c/u | Extras: $${extras} c/u
+
+Opciones disponibles (stock ≥ ${minStock}):
+${options.slice(0, 10).map((o: any) => `#${o.rank} ${o.brand} | ${o.loadSpeed ?? ""} | $${o.priceEach} c/u | Total: $${o.totalWithServices} | Prov: ${o.provider}`).join("\n")}
+
+¿Te aparto alguna opción?`;
+
+    const emailSubject = `Cotización Llantitune – ${size} (x${qty})`;
+    const emailBody =
+`Hola${body.customerName ? " " + body.customerName : ""},
+
+Te comparto la cotización de llantas ${size} (x${qty}).
+${body.vehicle ? `Vehículo: ${body.vehicle}\n` : ""}
+Incluye instalación y extras como se indica.
+
+${options.slice(0, 10).map((o: any) => `- ${o.brand} ${o.loadSpeed ?? ""}: $${o.priceEach} c/u (Total: $${o.totalWithServices}) [${o.provider}]`).join("\n")}
+
+¿Con cuál opción te quedas para apartarla?
+
+Saludos,
+Llantitune`;
+
+    return NextResponse.json({ quoteId, size, qty, providersLatestSnapshot: latest, options, whatsappText, emailSubject, emailBody });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 });
   }
 }
