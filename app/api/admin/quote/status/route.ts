@@ -27,13 +27,54 @@ function asNumber(v: any, fallback = 0) {
  */
 function isMissingColumnError(err: any) {
   const msg = String(err?.message ?? err ?? "");
-  return msg.includes("Could not find") && msg.includes("column");
+  // PostgREST schema cache style
+  if (msg.includes("Could not find") && msg.includes("column")) return true;
+  // Postgres/PostgREST "does not exist" styles
+  // examples:
+  // - "column quotes.id does not exist"
+  // - "column \"grand_total\" of relation \"quotes\" does not exist"
+  if (msg.includes("column") && msg.includes("does not exist")) return true;
+  return false;
 }
 
 function missingColumnName(err: any): string | null {
   const msg = String(err?.message ?? err ?? "");
   const m = msg.match(/Could not find the '([^']+)' column/);
-  return m?.[1] ?? null;
+  if (m?.[1]) return m[1];
+
+  // "column quotes.id does not exist" -> id
+  const m2 = msg.match(/column\s+[\w]+\.([\w_]+)\s+does not exist/i);
+  if (m2?.[1]) return m2[1];
+
+  // "column \"grand_total\" of relation ... does not exist" -> grand_total
+  const m3 = msg.match(/column\s+\"([^\"]+)\"\s+of\s+relation\s+\"[^\"]+\"\s+does not exist/i);
+  if (m3?.[1]) return m3[1];
+
+  return null;
+}
+
+async function safeUpdateByIdColumns(
+  table: string,
+  idCols: string[],
+  idValue: string,
+  updates: Record<string, any>,
+  optionalKeys: string[]
+) {
+  let lastErr: any = null;
+  for (const col of idCols) {
+    const res = await safeUpdate(table, { [col]: idValue }, updates, optionalKeys);
+    if (!res.error) return res;
+
+    // If the id column doesn't exist, try next
+    if (isMissingColumnError(res.error)) {
+      lastErr = res.error;
+      continue;
+    }
+
+    // Non-column issue -> stop
+    return res;
+  }
+  return { error: lastErr ?? new Error("No valid id column for update") };
 }
 
 async function safeInsertSingle(
@@ -120,6 +161,27 @@ async function safeDeleteByQuoteId(table: string, quoteId: string) {
     throw error;
   }
   throw lastErr ?? new Error(`Could not delete from ${table}: no quote id column matched`);
+}
+
+async function safeUpdateById(
+  table: string,
+  idValue: string,
+  updates: Record<string, any>,
+  optionalKeys: string[],
+  idCols: string[]
+) {
+  let lastMissing: any = null;
+  for (const col of idCols) {
+    const { error } = await safeUpdate(table, { [col]: idValue }, updates, optionalKeys);
+    if (!error) return;
+    if (isMissingColumnError(error)) {
+      lastMissing = error;
+      continue;
+    }
+    throw error;
+  }
+  if (lastMissing) throw lastMissing;
+  throw new Error(`Failed to update ${table}`);
 }
 
 export async function POST(req: Request) {
@@ -220,12 +282,16 @@ export async function POST(req: Request) {
       );
     } else {
       const { id, ...updatePayload } = headerPayload;
-      await safeUpdate(
+      // Update using whichever primary key column your `quotes` table actually has.
+      // Common patterns are: id, quote_id, quoteId, uuid.
+      const res = await safeUpdateByIdColumns(
         "quotes",
+        ["id", "quote_id", "quoteId", "uuid"],
+        finalQuoteId,
         updatePayload,
-        (q: any) => q.eq("id", finalQuoteId),
         ["quote_id", "quoteId", "vehicle_text"]
       );
+      if (res.error) throw res.error;
     }
 
     // -------------------------------------------------------
