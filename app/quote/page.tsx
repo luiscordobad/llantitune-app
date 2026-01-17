@@ -321,21 +321,65 @@ export default function QuotePage() {
   }
 
   async function sendAndAssignFolio() {
-    if (!draft?.quoteId) return;
-    if (!canProceedToStep5()) return setStatus("Selecciona al menos 1 opción por cada medida.");
-    setStatus("Enviando y asignando folio...");
-    const res = await fetch("/api/admin/quote/status", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ quoteId: draft.quoteId, status: "SENT" }),
-    });
-    const d = await res.json();
-    if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
-    setStatus("✅ ENVIADA. Ya puedes mandarla por WhatsApp o correo.");
-    if (d.quoteNumber) setDraft((p: any) => ({ ...p, quoteNumber: d.quoteNumber }));
-    // also mark as sent in local state
-    setDraft((p: any) => ({ ...p, status: 'SENT' }));
-  }
+  if (!draft) return setStatus("No hay cotización cargada.");
+  if (!canProceedToStep5())
+    return setStatus("Selecciona al menos 1 opción por cada medida.");
+
+  setStatus("Enviando y asignando folio...");
+
+  // Construir draft completo para enviarlo al backend
+  const payloadDraft = {
+    customer_name: customerName,
+    customer_phone: customerPhone,
+    customer_email: customerEmail,
+    lines: (draft.lines ?? []).map((ln: any) => ({
+      size: ln.size,
+      requested_qty: ln.requestedQty ?? ln.requested_qty ?? 0,
+      vehicle: [
+        ln.vehicleMake ?? ln.vehicle_make ?? "",
+        ln.vehicleModel ?? ln.vehicle_model ?? "",
+        ln.vehicleYear ?? ln.vehicle_year ?? "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+      options: (ln.options ?? []).map((o: any) => ({
+        tier: o.tierLabel ?? o.tier_label,
+        brand: o.brand,
+        model: o.model,
+        provider: o.provider ?? "N/A",
+        price_each: o.priceEach ?? o.price_each,
+        qty: o.quotedQty ?? o.qty,
+        total: o.totalTires ?? o.total,
+        included: o.included,
+      })),
+    })),
+  };
+
+  // EL BACKEND CREARÁ LA COTIZACIÓN AUTOMÁTICAMENTE
+  const res = await fetch("/api/admin/quote/status", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      status: "SENT",
+      quoteId: null,
+      draft: payloadDraft,
+    }),
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) return setStatus("Error: " + (data.error ?? "unknown"));
+
+  setStatus("✅ ENVIADA. Ya puedes mandarla por WhatsApp o correo.");
+
+  // Actualizar estado local
+  setDraft((p: any) => ({
+    ...p,
+    quoteNumber: data.quoteNumber,
+    quoteId: data.quoteId,
+    status: "SENT",
+  }));
+}
 
   function openWhatsapp() {
     const txt = buildPreviewText();
