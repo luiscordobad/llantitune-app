@@ -22,69 +22,19 @@ export async function POST(req: Request) {
       );
     }
 
-    let draft = draftFromBody;
+    // -------------------------------------------------------
+    // 1) EL FRONT NO ENVÍA NADA → draftFromBody es null → ERROR
+    // SOLUCIÓN: el frontend debe mandar draft completo en el BODY.
+    // -------------------------------------------------------
 
-    // ---------------------------------------------------------
-    // 1) CARGAR DATOS DESDE TABLAS REALES (NO drafts)
-    // ---------------------------------------------------------
-    if (!draft && quoteId) {
-      // Cargar información básica de la cotización
-      const { data: quoteData, error: qErr } = await supabaseAdmin
-        .from("quotes")
-        .select("*")
-        .eq("id", quoteId)
-        .single();
-
-      if (qErr) {
-        console.error("ERROR LOADING QUOTE:", qErr);
-        throw new Error("Failed to load quote");
-      }
-
-      // Cargar las líneas
-      const { data: linesData, error: lErr } = await supabaseAdmin
-        .from("quote_lines")
-        .select(`
-          id,
-          size,
-          requested_qty,
-          vehicle,
-          quote_items (
-            tier,
-            brand,
-            model,
-            provider,
-            price_each,
-            qty,
-            total
-          )
-        `)
-        .eq("quote_id", quoteId);
-
-      if (lErr) {
-        console.error("ERROR LOADING LINES:", lErr);
-        throw new Error("Failed to load quote lines");
-      }
-
-      draft = {
-        customer_name: quoteData.customer_name,
-        customer_phone: quoteData.customer_phone,
-        customer_email: quoteData.customer_email,
-        lines: linesData?.map((ln: any) => ({
-          ...ln,
-          options: ln.quote_items ?? [],
-        })) ?? [],
-      };
-    }
-
-    // ---------------------------------------------------------
-    // 2) VALIDACIÓN BÁSICA
-    // ---------------------------------------------------------
-    if (!draft) {
+    if (!draftFromBody) {
       return NextResponse.json(
-        { ok: false, error: "Draft not found" },
+        { ok: false, error: "Draft data is required in request body" },
         { status: 400 }
       );
     }
+
+    const draft = draftFromBody;
 
     if (!Array.isArray(draft.lines) || draft.lines.length === 0) {
       return NextResponse.json(
@@ -93,32 +43,54 @@ export async function POST(req: Request) {
       );
     }
 
-    // ---------------------------------------------------------
-    // 3) INSERTAR COTIZACIÓN
-    // ---------------------------------------------------------
-    const quoteNumber = generateQuoteNumber();
+    // -------------------------------------------------------
+    // 2) SI NO EXISTE QUOTEID → CREAR COTIZACIÓN NUEVA
+    // -------------------------------------------------------
+    let quoteRecord = null;
 
-    const { data: newQuote, error: quoteErr } = await supabaseAdmin
-      .from("quotes")
-      .insert({
-        quote_number: quoteNumber,
-        status: "SENT",
-        customer_name: draft.customer_name,
-        customer_phone: draft.customer_phone,
-        customer_email: draft.customer_email,
-        grand_total: 0,
-      })
-      .select()
-      .single();
+    if (!quoteId) {
+      const quoteNumber = generateQuoteNumber();
 
-    if (quoteErr || !newQuote) {
-      console.error("ERROR INSERTING QUOTE:", quoteErr);
-      throw new Error("Failed to insert quote");
+      const { data: newQuote, error: qErr } = await supabaseAdmin
+        .from("quotes")
+        .insert({
+          quote_number: quoteNumber,
+          status: "SENT",
+          customer_name: draft.customer_name,
+          customer_phone: draft.customer_phone,
+          customer_email: draft.customer_email,
+          grand_total: 0
+        })
+        .select()
+        .single();
+
+      if (qErr || !newQuote) {
+        throw new Error("Failed to create quote");
+      }
+
+      quoteRecord = newQuote;
+    } else {
+      // SI EXISTE, CARGAR LA QUOTE
+      const { data: existingQuote, error: qErr } = await supabaseAdmin
+        .from("quotes")
+        .select("*")
+        .eq("id", quoteId)
+        .single();
+
+      if (qErr || !existingQuote) {
+        throw new Error("Failed to load quote");
+      }
+
+      quoteRecord = existingQuote;
+
+      // BORRAR LÍNEAS E ITEMS ANTERIORES PARA RECARGAR TODO
+      await supabaseAdmin.from("quote_items").delete().eq("quote_id", quoteRecord.id);
+      await supabaseAdmin.from("quote_lines").delete().eq("quote_id", quoteRecord.id);
     }
 
-    // ---------------------------------------------------------
-    // 4) INSERTAR LÍNEAS + ITEMS
-    // ---------------------------------------------------------
+    // -------------------------------------------------------
+    // 3) INSERTAR LÍNEAS E ITEMS
+    // -------------------------------------------------------
     let grandTotal = 0;
 
     for (const ln of draft.lines) {
@@ -127,7 +99,7 @@ export async function POST(req: Request) {
       const { data: newLine, error: lineErr } = await supabaseAdmin
         .from("quote_lines")
         .insert({
-          quote_id: newQuote.id,
+          quote_id: quoteRecord.id,
           size: ln.size,
           requested_qty: ln.requested_qty,
           vehicle: vehicleLabel,
@@ -136,7 +108,6 @@ export async function POST(req: Request) {
         .single();
 
       if (lineErr || !newLine) {
-        console.error("ERROR INSERTING QUOTE LINE:", lineErr);
         throw new Error("Failed to insert quote line");
       }
 
@@ -144,16 +115,12 @@ export async function POST(req: Request) {
         (o: any) => o.included !== false
       );
 
-      if (!includedOptions.length) {
-        throw new Error("Each line must have at least one included option");
-      }
-
       for (const o of includedOptions) {
         const total = Number(o.total ?? 0);
         grandTotal += total;
 
         const { error: itemErr } = await supabaseAdmin.from("quote_items").insert({
-          quote_id: newQuote.id,
+          quote_id: quoteRecord.id,
           quote_line_id: newLine.id,
           tier: o.tier,
           brand: o.brand,
@@ -164,24 +131,22 @@ export async function POST(req: Request) {
           total,
         });
 
-        if (itemErr) {
-          console.error("ERROR INSERTING ITEM:", itemErr);
-          throw itemErr;
-        }
+        if (itemErr) throw itemErr;
       }
     }
 
-    // ---------------------------------------------------------
-    // 5) ACTUALIZAR TOTAL
-    // ---------------------------------------------------------
+    // -------------------------------------------------------
+    // 4) ACTUALIZAR TOTAL
+    // -------------------------------------------------------
     await supabaseAdmin
       .from("quotes")
       .update({ grand_total: grandTotal })
-      .eq("id", newQuote.id);
+      .eq("id", quoteRecord.id);
 
     return NextResponse.json({
       ok: true,
-      quoteNumber,
+      quoteNumber: quoteRecord.quote_number,
+      quoteId: quoteRecord.id,
     });
   } catch (err: any) {
     console.error("QUOTE STATUS ERROR:", err);
