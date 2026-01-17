@@ -223,7 +223,7 @@ export async function POST(req: Request) {
       await safeUpdate(
         "quotes",
         updatePayload,
-        (q) => q.eq("id", finalQuoteId),
+        (q: any) => q.eq("id", finalQuoteId),
         ["quote_id", "quoteId", "vehicle_text"]
       );
     }
