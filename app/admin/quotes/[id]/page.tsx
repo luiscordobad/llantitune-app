@@ -22,7 +22,9 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     .eq('quote_id', id)
     .order('rank')
 
-  const isSent = quote?.status === 'SENT'
+  // Some DBs don't have a `status` column. In that case, having a folio/quote_number
+  // is the best signal that the quote was "sent"/final.
+  const isSent = quote?.status === 'SENT' || !!quote?.quote_number || !!quote?.quote_no
   const hasSelectedItem = items?.some(i => i.included)
 
   async function saveSelection(formData: FormData) {
@@ -36,7 +38,15 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto' }}>
-      <h1>Cotización #{quote?.quote_no}</h1>
+      <h1>Cotización #{quote?.quote_number ?? quote?.quote_no ?? id}</h1>
+
+      <div style={{ color: '#666', marginTop: -6, marginBottom: 14 }}>
+        Cliente: <b>{quote?.customer_email ?? '—'}</b> &nbsp;|&nbsp; Vehículo: {[
+          quote?.vehicle_make,
+          quote?.vehicle_model,
+          quote?.vehicle_year,
+        ].filter(Boolean).join(' ') || '—'}
+      </div>
 
       <form action={saveSelection}>
         {items?.map(item => (
@@ -55,7 +65,11 @@ export default async function QuoteDetailPage({ params }: PageProps) {
               defaultChecked={item.included === true}
               disabled={!isSent}
             />
-            {item.brand} {item.model} — ${item.total_with_services}
+            {item.brand} {item.model} — ${
+              Number(
+                item.total_with_services ?? item.total ?? item.total_tires ?? item.price_each ?? 0
+              ).toFixed(2)
+            }
           </label>
         ))}
 
