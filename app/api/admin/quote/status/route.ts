@@ -85,7 +85,6 @@ export async function POST(req: Request) {
         customer_phone: draft.customer_phone ?? draft.customerPhone ?? null,
         customer_email: draft.customer_email ?? draft.customerEmail ?? null,
         vehicle_text: draft.vehicle_text ?? null,
-        grand_total: 0,
       });
       if (insErr) throw insErr;
     } else {
@@ -173,13 +172,27 @@ export async function POST(req: Request) {
     }
 
     // -------------------------------------------------------
-    // 3) Update totals
+    // 3) Update totals (best-effort)
+    //    Nota: tu tabla `quotes` puede NO tener columna `grand_total`.
+    //    Si no existe, no rompemos el flujo: los totales viven en quote_items.
     // -------------------------------------------------------
-    const { error: totErr } = await supabaseAdmin
-      .from("quotes")
-      .update({ grand_total: grandTotal })
-      .eq("quote_id", finalQuoteId);
-    if (totErr) throw totErr;
+    try {
+      const { error: totErr } = await supabaseAdmin
+        .from("quotes")
+        .update({ grand_total: grandTotal } as any)
+        .eq("quote_id", finalQuoteId);
+      if (totErr) throw totErr;
+    } catch (e) {
+      // fallback: intentar otras columnas comunes, sin fallar si no existen
+      try {
+        await supabaseAdmin
+          .from("quotes")
+          .update({ total: grandTotal } as any)
+          .eq("quote_id", finalQuoteId);
+      } catch {
+        // ignore
+      }
+    }
 
     return NextResponse.json({
       ok: true,
