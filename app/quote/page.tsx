@@ -321,20 +321,59 @@ export default function QuotePage() {
   }
 
   async function sendAndAssignFolio() {
-    if (!draft?.quoteId) return;
+    // En Step 5 todavía estamos trabajando con un "draft" en memoria.
+    // El endpoint /api/admin/quote/status (route.ts) requiere que mandemos el draft completo.
+    if (!draft) return setStatus("Primero genera opciones en el Paso 4.");
     if (!canProceedToStep5()) return setStatus("Selecciona al menos 1 opción por cada medida.");
+
+    // Normalizamos el payload al formato que espera el backend.
+    const draftForBackend = {
+      customer_name: customerName,
+      customer_phone: customerPhone,
+      customer_email: customerEmail,
+      lines: (draft.lines ?? []).map((ln: any) => {
+        const make = (ln as any).vehicleMake ?? (ln as any).vehicle_make ?? "";
+        const model = (ln as any).vehicleModel ?? (ln as any).vehicle_model ?? "";
+        const year = (ln as any).vehicleYear ?? (ln as any).vehicle_year ?? "";
+        const vehicle = [make, model, year].filter(Boolean).join(" ") || null;
+
+        return {
+          size: ln.size,
+          requested_qty: ln.requestedQty,
+          vehicle,
+          options: (ln.options ?? []).map((o: any) => ({
+            tier: o.tier ?? o.tierLabel,
+            tier_label: o.tier_label ?? o.tierLabel,
+            brand: o.brand,
+            model: o.model,
+            provider: o.provider ?? "N/A",
+            price_each: o.price_each ?? o.priceEach,
+            quoted_qty: o.quoted_qty ?? o.quotedQty,
+            total: o.total ?? o.totalTires,
+            included: o.included,
+          })),
+        };
+      }),
+    };
+
     setStatus("Enviando y asignando folio...");
     const res = await fetch("/api/admin/quote/status", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ quoteId: draft.quoteId, status: "SENT" }),
+      body: JSON.stringify({ status: "SENT", draft: draftForBackend }),
     });
+
     const d = await res.json();
     if (!res.ok) return setStatus("Error: " + (d.error ?? "unknown"));
+
     setStatus("✅ ENVIADA. Ya puedes mandarla por WhatsApp o correo.");
-    if (d.quoteNumber) setDraft((p: any) => ({ ...p, quoteNumber: d.quoteNumber }));
-    // also mark as sent in local state
-    setDraft((p: any) => ({ ...p, status: 'SENT' }));
+    // Actualizamos el draft local con el folio real y el quoteId real para PDF.
+    setDraft((p: any) => ({
+      ...p,
+      quoteNumber: d.quoteNumber ?? p?.quoteNumber,
+      quoteId: d.quoteId ?? p?.quoteId,
+      status: "SENT",
+    }));
   }
 
   function openWhatsapp() {
