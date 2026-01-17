@@ -3,237 +3,194 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
-type DraftOption = {
-  tierLabel?: string;
-  tier?: string;
-  brand?: string;
-  model?: string;
-  loadSpeed?: string;
-  provider?: string;
-  sku?: string;
-  tire_id?: string;
-  priceEach?: number;
-  price_each?: number;
-  quotedQty?: number;
-  qty?: number;
-  total?: number;
-  included?: boolean;
-};
-
-type DraftLine = {
-  lineId?: string;
-  line_id?: string;
-  size?: string;
-  requestedQty?: number;
-  requested_qty?: number;
-  vehicle?: any;
-  vehicle_text?: string;
-  options?: DraftOption[];
-};
-
-type Draft = {
-  quoteId?: string;
-  quote_id?: string;
-  customer_name?: string;
-  customer_phone?: string;
-  customer_email?: string;
-  notes?: string;
-  internal_notes?: string;
-  deposit_amount?: number;
-  promised_at?: string;
-  lines?: DraftLine[];
-};
-
 function generateQuoteNumber() {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  const rand = Math.floor(Math.random() * 9000) + 1000;
-  return `LT-${yyyy}${mm}${dd}-${rand}`;
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const t = Date.now().toString().slice(-4);
+  return `LT-${y}${m}${day}-${t}`;
 }
 
-function num(v: unknown, fallback = 0) {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
+function asNumber(v: any, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 }
 
-function vehicleToText(v: any) {
-  if (!v) return "";
-  if (typeof v === "string") return v;
-  if (typeof v === "object") {
-    const make = v.make ?? v.brand ?? "";
-    const model = v.model ?? "";
-    const year = v.year ?? "";
-    return [make, model, year].filter(Boolean).join(" ").trim();
-  }
-  return String(v);
-}
-
-function lineIdOf(line: DraftLine, idx: number) {
-  return line.line_id || line.lineId || `L${idx + 1}`;
-}
-
-function tierOf(opt: DraftOption) {
-  return (opt.tierLabel || opt.tier || "").trim();
-}
-
-function priceEachOf(opt: DraftOption) {
-  return num(opt.price_each ?? opt.priceEach, 0);
-}
-
-function qtyOf(opt: DraftOption) {
-  return num(opt.qty ?? opt.quotedQty, 0);
-}
-
-function isIncluded(opt: DraftOption) {
-  // In the UI, options may omit the flag; default to included.
-  return opt.included !== false;
-}
-
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => null);
-    const status = body?.status as string | undefined;
-    const draft = body?.draft as Draft | undefined;
-
-    if (!draft) {
-      return NextResponse.json(
-        { ok: false, error: "Draft data is required in request body." },
-        { status: 400 }
-      );
-    }
+    const body = await req.json();
+    const { status, quoteId, draft: draftFromBody } = body ?? {};
 
     if (status !== "SENT") {
       return NextResponse.json(
-        { ok: false, error: "Unsupported status." },
+        { ok: false, error: "Only SENT status is supported" },
         { status: 400 }
       );
     }
 
-    const quoteId = draft.quote_id || draft.quoteId;
-    if (!quoteId) {
+    if (!draftFromBody) {
       return NextResponse.json(
-        { ok: false, error: "quoteId is required in draft." },
+        { ok: false, error: "Draft data is required in request body" },
         { status: 400 }
       );
     }
 
-    const lines = Array.isArray(draft.lines) ? draft.lines : [];
-    if (lines.length === 0) {
+    const draft = draftFromBody as any;
+
+    // Prefer explicit quoteId (top-level) then draft.quoteId; if missing, create one.
+    const finalQuoteId: string =
+      (quoteId as string) || (draft.quoteId as string) ||
+      (globalThis.crypto?.randomUUID?.() ?? "");
+
+    if (!finalQuoteId) {
       return NextResponse.json(
-        { ok: false, error: "Draft must include at least one line." },
+        { ok: false, error: "quoteId is required (could not be generated)" },
         { status: 400 }
       );
     }
 
-    const quoteNumber = generateQuoteNumber();
+    if (!Array.isArray(draft.lines) || draft.lines.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: "At least one line is required" },
+        { status: 400 }
+      );
+    }
 
-    // 1) Upsert quote header
-    const header: Record<string, any> = {
-      quote_id: quoteId,
-      quote_number: quoteNumber,
-      status: "SENT",
-      customer_name: (draft.customer_name || "").trim(),
-      customer_phone: (draft.customer_phone || "").trim() || null,
-      customer_email: (draft.customer_email || "").trim() || null,
-      notes: (draft.notes || "").trim() || null,
-      internal_notes: (draft.internal_notes || "").trim() || null,
-      deposit_amount: num(draft.deposit_amount, 0),
-      promised_at: draft.promised_at || null,
-    };
-
-    const { data: quoteRow, error: quoteErr } = await supabaseAdmin
+    // -------------------------------------------------------
+    // 1) Ensure quote header exists (create if missing)
+    // -------------------------------------------------------
+    const { data: existing, error: exErr } = await supabaseAdmin
       .from("quotes")
-      .upsert(header, { onConflict: "quote_id" })
       .select("quote_id, quote_number")
-      .single();
+      .eq("quote_id", finalQuoteId)
+      .maybeSingle();
 
-    if (quoteErr) {
-      throw new Error(`Supabase quotes upsert failed: ${quoteErr.message}`);
+    if (exErr) throw exErr;
+
+    let quoteNumber: string =
+      (draft.quoteNumber as string) || existing?.quote_number || "";
+
+    if (!quoteNumber || quoteNumber === "BORRADOR") {
+      quoteNumber = generateQuoteNumber();
     }
 
-    // 2) Replace lines/items for this quote (idempotent)
-    const delItems = await supabaseAdmin.from("quote_items").delete().eq("quote_id", quoteId);
-    if (delItems.error) {
-      throw new Error(`Supabase quote_items delete failed: ${delItems.error.message}`);
+    // Create quote row if it doesn't exist; otherwise update header basics.
+    if (!existing) {
+      const { error: insErr } = await supabaseAdmin.from("quotes").insert({
+        quote_id: finalQuoteId,
+        quote_number: quoteNumber,
+        status: "SENT",
+        customer_name: draft.customer_name ?? draft.customerName ?? null,
+        customer_phone: draft.customer_phone ?? draft.customerPhone ?? null,
+        customer_email: draft.customer_email ?? draft.customerEmail ?? null,
+        vehicle_text: draft.vehicle_text ?? null,
+        grand_total: 0,
+      });
+      if (insErr) throw insErr;
+    } else {
+      const { error: updErr } = await supabaseAdmin
+        .from("quotes")
+        .update({
+          status: "SENT",
+          quote_number: quoteNumber,
+          customer_name: draft.customer_name ?? draft.customerName ?? null,
+          customer_phone: draft.customer_phone ?? draft.customerPhone ?? null,
+          customer_email: draft.customer_email ?? draft.customerEmail ?? null,
+          vehicle_text: draft.vehicle_text ?? null,
+        })
+        .eq("quote_id", finalQuoteId);
+      if (updErr) throw updErr;
     }
 
-    const delLines = await supabaseAdmin.from("quote_lines").delete().eq("quote_id", quoteId);
-    if (delLines.error) {
-      throw new Error(`Supabase quote_lines delete failed: ${delLines.error.message}`);
-    }
+    // -------------------------------------------------------
+    // 2) Replace lines/items for this quote
+    // -------------------------------------------------------
+    await supabaseAdmin.from("quote_items").delete().eq("quote_id", finalQuoteId);
+    await supabaseAdmin.from("quote_lines").delete().eq("quote_id", finalQuoteId);
 
-    const lineRows = lines.map((ln, idx) => {
-      const vehicleText = (ln.vehicle_text || vehicleToText(ln.vehicle)).trim() || null;
-      const quantity = num(ln.requested_qty ?? ln.requestedQty, 0);
-      return {
-        quote_id: quoteId,
-        line_id: lineIdOf(ln, idx),
-        line_no: idx + 1,
-        size: (ln.size || "").trim(),
+    let grandTotal = 0;
+
+    for (let i = 0; i < draft.lines.length; i++) {
+      const ln = draft.lines[i];
+
+      const lineId: string =
+        (ln.lineId as string) || (globalThis.crypto?.randomUUID?.() ?? "");
+      if (!lineId) {
+        throw new Error("Failed to generate lineId");
+      }
+
+      const size = ln.size;
+      const quantity = asNumber(ln.requestedQty ?? ln.requested_qty ?? ln.qty ?? 1, 1);
+      const vehicleText = ln.vehicle ?? ln.vehicleText ?? null;
+
+      const { error: lineErr } = await supabaseAdmin.from("quote_lines").insert({
+        quote_id: finalQuoteId,
+        line_id: lineId,
+        line_no: i + 1,
+        size,
         quantity,
         vehicle_text: vehicleText,
-      };
-    });
+      });
+      if (lineErr) throw lineErr;
 
-    const { error: lineInsErr } = await supabaseAdmin.from("quote_lines").insert(lineRows);
-    if (lineInsErr) {
-      throw new Error(`Supabase quote_lines insert failed: ${lineInsErr.message}`);
-    }
-
-    const itemRows: any[] = [];
-    for (let i = 0; i < lines.length; i += 1) {
-      const ln = lines[i];
-      const lineId = lineIdOf(ln, i);
       const options = Array.isArray(ln.options) ? ln.options : [];
+      const included = options.filter((o: any) => o?.included !== false);
 
-      let rank = 1;
-      for (const opt of options) {
-        if (!isIncluded(opt)) continue;
+      for (const o of included) {
+        const quoteItemId: string =
+          (o.quoteItemId as string) || (globalThis.crypto?.randomUUID?.() ?? "");
+        if (!quoteItemId) throw new Error("Failed to generate quoteItemId");
 
-        const quantity = qtyOf(opt);
-        const priceEach = priceEachOf(opt);
-        const total = num(opt.total, priceEach * quantity);
+        const qty = asNumber(o.qty ?? o.quotedQty ?? quantity, quantity);
+        const priceEach = asNumber(o.price_each ?? o.priceEach ?? 0, 0);
+        const total = asNumber(o.total ?? o.totalTires ?? priceEach * qty, priceEach * qty);
 
-        itemRows.push({
-          quote_id: quoteId,
+        grandTotal += total;
+
+        const { error: itemErr } = await supabaseAdmin.from("quote_items").insert({
+          quote_id: finalQuoteId,
           line_id: lineId,
-          rank,
-          tier: tierOf(opt) || null,
-          brand: (opt.brand || "").trim() || null,
-          model: (opt.model || "").trim() || null,
-          load_speed: (opt.loadSpeed || "").trim() || null,
-          provider: (opt.provider || "").trim() || null,
-          sku: (opt.sku || "").trim() || null,
-          tire_id: (opt.tire_id || "").trim() || null,
+          quote_item_id: quoteItemId,
+
+          tier: o.tier ?? null,
+          provider: o.provider ?? "N/A",
+          sku: o.sku ?? null,
+          size: o.size ?? size ?? null,
+          brand: o.brand ?? null,
+          model: o.model ?? null,
+          load_speed: o.loadSpeed ?? o.load_speed ?? null,
+
+          stock: asNumber(o.stock ?? 0, 0),
+          cost: asNumber(o.cost ?? o.cost_each ?? 0, 0),
           price_each: priceEach,
-          quantity,
+
+          qty,
           total,
-          included: true,
         });
-        rank += 1;
+        if (itemErr) throw itemErr;
       }
     }
 
-    if (itemRows.length > 0) {
-      const { error: itemInsErr } = await supabaseAdmin.from("quote_items").insert(itemRows);
-      if (itemInsErr) {
-        throw new Error(`Supabase quote_items insert failed: ${itemInsErr.message}`);
-      }
-    }
+    // -------------------------------------------------------
+    // 3) Update totals
+    // -------------------------------------------------------
+    const { error: totErr } = await supabaseAdmin
+      .from("quotes")
+      .update({ grand_total: grandTotal })
+      .eq("quote_id", finalQuoteId);
+    if (totErr) throw totErr;
 
     return NextResponse.json({
       ok: true,
-      quoteId: quoteRow?.quote_id || quoteId,
-      quoteNumber: quoteRow?.quote_number || quoteNumber,
-      status: "SENT",
+      quoteId: finalQuoteId,
+      quoteNumber,
+      grandTotal,
     });
   } catch (err: any) {
-    console.error("/api/admin/quote/status error:", err);
+    console.error("QUOTE STATUS ERROR:", err);
     return NextResponse.json(
-      { ok: false, error: err?.message || "Internal Server Error" },
+      { ok: false, error: err?.message ?? "Unknown error" },
       { status: 500 }
     );
   }
