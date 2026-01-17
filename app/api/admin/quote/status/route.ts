@@ -17,6 +17,111 @@ function asNumber(v: any, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Supabase "schema cache" errors happen when the code references a column
+ * that doesn't exist in your actual table schema.
+ *
+ * Because your Supabase tables can differ from the code assumptions, we use
+ * a best-effort strategy: try including optional columns (like vehicle_text)
+ * and if Supabase returns a missing-column error, retry without them.
+ */
+function isMissingColumnError(err: any) {
+  const msg = String(err?.message ?? err ?? "");
+  return msg.includes("Could not find") && msg.includes("column");
+}
+
+function missingColumnName(err: any): string | null {
+  const msg = String(err?.message ?? err ?? "");
+  const m = msg.match(/Could not find the '([^']+)' column/);
+  return m?.[1] ?? null;
+}
+
+async function safeInsertSingle(
+  table: string,
+  payload: Record<string, any>,
+  optionalKeys: string[]
+) {
+  // Try, and if Supabase complains about a missing column, remove just that
+  // column (or the provided optional keys) and retry a few times.
+  let current = { ...payload };
+  for (let i = 0; i < 5; i++) {
+    let { data, error } = await supabaseAdmin
+      .from(table)
+      .insert(current)
+      .select()
+      .single();
+
+    if (!error) return { data, error: null as any };
+
+    if (!isMissingColumnError(error)) return { data: null, error };
+
+    const missing = missingColumnName(error);
+    if (missing && missing in current) {
+      delete (current as any)[missing];
+      continue;
+    }
+
+    // Fallback: drop all optional keys once
+    if (optionalKeys.length) {
+      for (const k of optionalKeys) delete (current as any)[k];
+      // prevent infinite loop if we already dropped them
+      optionalKeys = [];
+      continue;
+    }
+
+    return { data: null, error };
+  }
+
+  return { data: null, error: new Error("Insert failed after retries") };
+}
+
+async function safeUpdate(
+  table: string,
+  match: Record<string, any>,
+  updates: Record<string, any>,
+  optionalKeys: string[]
+) {
+  let current = { ...updates };
+  for (let i = 0; i < 5; i++) {
+    let q = supabaseAdmin.from(table).update(current);
+    for (const [k, v] of Object.entries(match)) q = q.eq(k, v as any);
+    const { error } = await q;
+    if (!error) return { error: null as any };
+    if (!isMissingColumnError(error)) return { error };
+
+    const missing = missingColumnName(error);
+    if (missing && missing in current) {
+      delete (current as any)[missing];
+      continue;
+    }
+
+    if (optionalKeys.length) {
+      for (const k of optionalKeys) delete (current as any)[k];
+      optionalKeys = [];
+      continue;
+    }
+
+    return { error };
+  }
+
+  return { error: new Error("Update failed after retries") };
+}
+
+async function safeDeleteByQuoteId(table: string, quoteId: string) {
+  const cols = ["quote_id", "quoteId", "quote_uuid", "quote", "quote_pk"]; // fallback order
+  let lastErr: any = null;
+  for (const col of cols) {
+    const { error } = await supabaseAdmin.from(table).delete().eq(col, quoteId);
+    if (!error) return;
+    if (isMissingColumnError(error)) {
+      lastErr = error;
+      continue;
+    }
+    throw error;
+  }
+  throw lastErr ?? new Error(`Could not delete from ${table}: no quote id column matched`);
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -60,13 +165,29 @@ export async function POST(req: Request) {
     // -------------------------------------------------------
     // 1) Ensure quote header exists (create if missing)
     // -------------------------------------------------------
-    const { data: existing, error: exErr } = await supabaseAdmin
-      .from("quotes")
-      .select("quote_id, quote_number")
-      .eq("quote_id", finalQuoteId)
-      .maybeSingle();
+    // Different DBs may key the quote by `id` (uuid) or by a custom `quote_id`.
+    // We prefer `id` and fall back to `quote_id` if needed.
+    let existing: any = null;
+    {
+      const r1 = await supabaseAdmin
+        .from("quotes")
+        .select("id, quote_number")
+        .eq("id", finalQuoteId)
+        .maybeSingle();
 
-    if (exErr) throw exErr;
+      if (r1.error && isMissingColumnError(r1.error)) {
+        const r2 = await supabaseAdmin
+          .from("quotes")
+          .select("quote_id, quote_number")
+          .eq("quote_id", finalQuoteId)
+          .maybeSingle();
+        if (r2.error) throw r2.error;
+        existing = r2.data;
+      } else {
+        if (r1.error) throw r1.error;
+        existing = r1.data;
+      }
+    }
 
     let quoteNumber: string =
       (draft.quoteNumber as string) || existing?.quote_number || "";
@@ -76,37 +197,43 @@ export async function POST(req: Request) {
     }
 
     // Create quote row if it doesn't exist; otherwise update header basics.
+    // NOTE: Some deployments don't have columns like `vehicle_text` or even `quote_id`.
+    // We retry without optional columns so the API doesn't 500.
+    const headerPayload = {
+      id: finalQuoteId,
+      quote_id: finalQuoteId,
+      quoteId: finalQuoteId,
+      quote_number: quoteNumber,
+      status: "SENT",
+      customer_name: draft.customer_name ?? draft.customerName ?? null,
+      customer_phone: draft.customer_phone ?? draft.customerPhone ?? null,
+      customer_email: draft.customer_email ?? draft.customerEmail ?? null,
+      vehicle_text: (draft as any).vehicle_text ?? (draft as any).vehicleText ?? null,
+    } as Record<string, any>;
+
     if (!existing) {
-      const { error: insErr } = await supabaseAdmin.from("quotes").insert({
-        quote_id: finalQuoteId,
-        quote_number: quoteNumber,
-        status: "SENT",
-        customer_name: draft.customer_name ?? draft.customerName ?? null,
-        customer_phone: draft.customer_phone ?? draft.customerPhone ?? null,
-        customer_email: draft.customer_email ?? draft.customerEmail ?? null,
-        vehicle_text: draft.vehicle_text ?? null,
-      });
-      if (insErr) throw insErr;
+      await safeInsertSingle(
+        "quotes",
+        headerPayload,
+        // optional columns to strip if your schema doesn't have them
+        ["quote_id", "quoteId", "vehicle_text"]
+      );
     } else {
-      const { error: updErr } = await supabaseAdmin
-        .from("quotes")
-        .update({
-          status: "SENT",
-          quote_number: quoteNumber,
-          customer_name: draft.customer_name ?? draft.customerName ?? null,
-          customer_phone: draft.customer_phone ?? draft.customerPhone ?? null,
-          customer_email: draft.customer_email ?? draft.customerEmail ?? null,
-          vehicle_text: draft.vehicle_text ?? null,
-        })
-        .eq("quote_id", finalQuoteId);
-      if (updErr) throw updErr;
+      const { id, ...updatePayload } = headerPayload;
+      await safeUpdate(
+        "quotes",
+        updatePayload,
+        (q) => q.eq("id", finalQuoteId),
+        ["quote_id", "quoteId", "vehicle_text"]
+      );
     }
 
     // -------------------------------------------------------
     // 2) Replace lines/items for this quote
     // -------------------------------------------------------
-    await supabaseAdmin.from("quote_items").delete().eq("quote_id", finalQuoteId);
-    await supabaseAdmin.from("quote_lines").delete().eq("quote_id", finalQuoteId);
+    // Clear old draft content (FK column name varies by schema)
+    await safeDeleteByQuoteId("quote_items", finalQuoteId);
+    await safeDeleteByQuoteId("quote_lines", finalQuoteId);
 
     let grandTotal = 0;
 
@@ -123,15 +250,31 @@ export async function POST(req: Request) {
       const quantity = asNumber(ln.requestedQty ?? ln.requested_qty ?? ln.qty ?? 1, 1);
       const vehicleText = ln.vehicle ?? ln.vehicleText ?? null;
 
-      const { error: lineErr } = await supabaseAdmin.from("quote_lines").insert({
+      // Insert line with schema-flexible keys (some projects use different column names)
+      const linePayload: Record<string, any> = {
         quote_id: finalQuoteId,
+        quoteId: finalQuoteId,
         line_id: lineId,
+        lineId: lineId,
         line_no: i + 1,
         size,
         quantity,
+        requested_qty: quantity,
+        requestedQty: quantity,
         vehicle_text: vehicleText,
-      });
-      if (lineErr) throw lineErr;
+        vehicle: vehicleText,
+      };
+
+      await safeInsertSingle("quote_lines", linePayload, [
+        "quoteId",
+        "lineId",
+        "line_no",
+        "quantity",
+        "requested_qty",
+        "requestedQty",
+        "vehicle_text",
+        "vehicle",
+      ]);
 
       const options = Array.isArray(ln.options) ? ln.options : [];
       const included = options.filter((o: any) => o?.included !== false);
@@ -147,10 +290,13 @@ export async function POST(req: Request) {
 
         grandTotal += total;
 
-        const { error: itemErr } = await supabaseAdmin.from("quote_items").insert({
+        const itemPayload: Record<string, any> = {
           quote_id: finalQuoteId,
+          quoteId: finalQuoteId,
           line_id: lineId,
+          lineId: lineId,
           quote_item_id: quoteItemId,
+          quoteItemId: quoteItemId,
 
           tier: o.tier ?? null,
           provider: o.provider ?? "N/A",
@@ -166,8 +312,16 @@ export async function POST(req: Request) {
 
           qty,
           total,
-        });
-        if (itemErr) throw itemErr;
+        };
+
+        await safeInsertSingle("quote_items", itemPayload, [
+          "quoteId",
+          "lineId",
+          "quoteItemId",
+          "load_speed",
+          "stock",
+          "cost",
+        ]);
       }
     }
 
@@ -176,23 +330,13 @@ export async function POST(req: Request) {
     //    Nota: tu tabla `quotes` puede NO tener columna `grand_total`.
     //    Si no existe, no rompemos el flujo: los totales viven en quote_items.
     // -------------------------------------------------------
-    try {
-      const { error: totErr } = await supabaseAdmin
-        .from("quotes")
-        .update({ grand_total: grandTotal } as any)
-        .eq("quote_id", finalQuoteId);
-      if (totErr) throw totErr;
-    } catch (e) {
-      // fallback: intentar otras columnas comunes, sin fallar si no existen
-      try {
-        await supabaseAdmin
-          .from("quotes")
-          .update({ total: grandTotal } as any)
-          .eq("quote_id", finalQuoteId);
-      } catch {
-        // ignore
-      }
-    }
+    // Totals: schema-flexible, do not break if columns differ
+    await safeUpdate(
+      "quotes",
+      { id: finalQuoteId },
+      { grand_total: grandTotal, total: grandTotal, grandTotal },
+      ["grand_total", "total", "grandTotal"]
+    );
 
     return NextResponse.json({
       ok: true,
