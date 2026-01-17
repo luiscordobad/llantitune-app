@@ -1,9 +1,39 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { randomUUID } from "crypto";
 
 export const runtime = "nodejs";
 
-function generateQuoteNumber() {
+type QuoteStatus = "DRAFT" | "SENT" | "APPROVED" | "REJECTED";
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function asNumber(v: unknown, fallback = 0): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function uuid(): string {
+  // Node runtime (Vercel) supports crypto.randomUUID via import
+  return randomUUID();
+}
+
+function normalizeStatus(v: unknown): QuoteStatus {
+  const s = String(v ?? "").toUpperCase();
+  if (s === "SENT" || s === "APPROVED" || s === "REJECTED" || s === "DRAFT") return s;
+  return "DRAFT";
+}
+
+async function getNextQuoteNumberFallback(): Promise<string> {
+  // Try DB function created in migrations; fallback to timestamp format
+  try {
+    const { data, error } = await supabaseAdmin.rpc("next_quote_number");
+    if (!error && data) return String(data);
+  } catch {
+    // ignore
+  }
   const d = new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -12,409 +42,206 @@ function generateQuoteNumber() {
   return `LT-${y}${m}${day}-${t}`;
 }
 
-function asNumber(v: any, fallback = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-/**
- * Supabase "schema cache" errors happen when the code references a column
- * that doesn't exist in your actual table schema.
- *
- * Because your Supabase tables can differ from the code assumptions, we use
- * a best-effort strategy: try including optional columns (like vehicle_text)
- * and if Supabase returns a missing-column error, retry without them.
- */
-function isMissingColumnError(err: any) {
-  const msg = String(err?.message ?? err ?? "");
-  // PostgREST schema cache style
-  if (msg.includes("Could not find") && msg.includes("column")) return true;
-  // Postgres/PostgREST "does not exist" styles
-  // examples:
-  // - "column quotes.id does not exist"
-  // - "column \"grand_total\" of relation \"quotes\" does not exist"
-  if (msg.includes("column") && msg.includes("does not exist")) return true;
-  return false;
-}
-
-function missingColumnName(err: any): string | null {
-  const msg = String(err?.message ?? err ?? "");
-  const m = msg.match(/Could not find the '([^']+)' column/);
-  if (m?.[1]) return m[1];
-
-  // "column quotes.id does not exist" -> id
-  const m2 = msg.match(/column\s+[\w]+\.([\w_]+)\s+does not exist/i);
-  if (m2?.[1]) return m2[1];
-
-  // "column \"grand_total\" of relation ... does not exist" -> grand_total
-  const m3 = msg.match(/column\s+\"([^\"]+)\"\s+of\s+relation\s+\"[^\"]+\"\s+does not exist/i);
-  if (m3?.[1]) return m3[1];
-
-  return null;
-}
-
-async function safeUpdateByIdColumns(
-  table: string,
-  idCols: string[],
-  idValue: string,
-  updates: Record<string, any>,
-  optionalKeys: string[]
-) {
-  let lastErr: any = null;
-  for (const col of idCols) {
-    const res = await safeUpdate(table, { [col]: idValue }, updates, optionalKeys);
-    if (!res.error) return res;
-
-    // If the id column doesn't exist, try next
-    if (isMissingColumnError(res.error)) {
-      lastErr = res.error;
-      continue;
-    }
-
-    // Non-column issue -> stop
-    return res;
-  }
-  return { error: lastErr ?? new Error("No valid id column for update") };
-}
-
-async function safeInsertSingle(
-  table: string,
-  payload: Record<string, any>,
-  optionalKeys: string[]
-) {
-  // Try, and if Supabase complains about a missing column, remove just that
-  // column (or the provided optional keys) and retry a few times.
-  let current = { ...payload };
-  for (let i = 0; i < 5; i++) {
-    let { data, error } = await supabaseAdmin
-      .from(table)
-      .insert(current)
-      .select()
-      .single();
-
-    if (!error) return { data, error: null as any };
-
-    if (!isMissingColumnError(error)) return { data: null, error };
-
-    const missing = missingColumnName(error);
-    if (missing && missing in current) {
-      delete (current as any)[missing];
-      continue;
-    }
-
-    // Fallback: drop all optional keys once
-    if (optionalKeys.length) {
-      for (const k of optionalKeys) delete (current as any)[k];
-      // prevent infinite loop if we already dropped them
-      optionalKeys = [];
-      continue;
-    }
-
-    return { data: null, error };
-  }
-
-  return { data: null, error: new Error("Insert failed after retries") };
-}
-
-async function safeUpdate(
-  table: string,
-  match: Record<string, any>,
-  updates: Record<string, any>,
-  optionalKeys: string[]
-) {
-  let current = { ...updates };
-  for (let i = 0; i < 5; i++) {
-    let q = supabaseAdmin.from(table).update(current);
-    for (const [k, v] of Object.entries(match)) q = q.eq(k, v as any);
-    const { error } = await q;
-    if (!error) return { error: null as any };
-    if (!isMissingColumnError(error)) return { error };
-
-    const missing = missingColumnName(error);
-    if (missing && missing in current) {
-      delete (current as any)[missing];
-      continue;
-    }
-
-    if (optionalKeys.length) {
-      for (const k of optionalKeys) delete (current as any)[k];
-      optionalKeys = [];
-      continue;
-    }
-
-    return { error };
-  }
-
-  return { error: new Error("Update failed after retries") };
-}
-
-async function safeDeleteByQuoteId(table: string, quoteId: string) {
-  const cols = ["quote_id", "quoteId", "quote_uuid", "quote", "quote_pk"]; // fallback order
-  let lastErr: any = null;
-  for (const col of cols) {
-    const { error } = await supabaseAdmin.from(table).delete().eq(col, quoteId);
-    if (!error) return;
-    if (isMissingColumnError(error)) {
-      lastErr = error;
-      continue;
-    }
-    throw error;
-  }
-  throw lastErr ?? new Error(`Could not delete from ${table}: no quote id column matched`);
-}
-
-async function safeUpdateById(
-  table: string,
-  idValue: string,
-  updates: Record<string, any>,
-  optionalKeys: string[],
-  idCols: string[]
-) {
-  let lastMissing: any = null;
-  for (const col of idCols) {
-    const { error } = await safeUpdate(table, { [col]: idValue }, updates, optionalKeys);
-    if (!error) return;
-    if (isMissingColumnError(error)) {
-      lastMissing = error;
-      continue;
-    }
-    throw error;
-  }
-  if (lastMissing) throw lastMissing;
-  throw new Error(`Failed to update ${table}`);
-}
-
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { status, quoteId, draft: draftFromBody } = body ?? {};
+    const status = normalizeStatus(body?.status);
+    const draft = body?.draft ?? {};
 
-    if (status !== "SENT") {
-      return NextResponse.json(
-        { ok: false, error: "Only SENT status is supported" },
-        { status: 400 }
-      );
+    const quoteId: string | null =
+      (typeof draft?.quote_id === "string" && draft.quote_id) ||
+      (typeof draft?.quoteId === "string" && draft.quoteId) ||
+      null;
+
+    if (!quoteId) {
+      return NextResponse.json({ error: "quoteId is required in draft." }, { status: 400 });
     }
 
-    if (!draftFromBody) {
-      return NextResponse.json(
-        { ok: false, error: "Draft data is required in request body" },
-        { status: 400 }
-      );
+    // Header fields (explained: you may not have all of these in the UI yet; that's OK)
+    const headerPayload: Record<string, any> = {
+      quote_id: quoteId,
+      status,
+      customer_name: draft?.customerName ?? null,
+      customer_phone: draft?.customerPhone ?? null,
+      customer_email: draft?.customerEmail ?? null,
+      vehicle_text: draft?.vehicleText ?? null,
+      urgency: draft?.urgency ?? null,
+      preference: draft?.preference ?? null,
+      notes: draft?.notes ?? null,
+      internal_notes: draft?.internalNotes ?? null,
+      deposit_amount: draft?.depositAmount ?? null,
+      promised_at: draft?.promisedAt ?? null,
+      min_stock: draft?.minStock ?? null,
+      markup_pct: draft?.markupPct ?? draft?.markup ?? null,
+      install_each: draft?.installEach ?? draft?.install ?? null,
+      extras_each: draft?.extrasEach ?? draft?.extras ?? null,
+      vehicle_make: draft?.vehicleMake ?? null,
+      vehicle_model: draft?.vehicleModel ?? null,
+      vehicle_year: draft?.vehicleYear ?? null,
+    };
+
+    // Status timestamps
+    const tsNow = nowIso();
+    if (status === "SENT") headerPayload.sent_at = tsNow;
+    if (status === "APPROVED") headerPayload.approved_at = tsNow;
+    if (status === "REJECTED") headerPayload.rejected_at = tsNow;
+
+    // Quote number on send
+    if (status === "SENT") {
+      const existingFromDraft =
+        (typeof draft?.quote_number === "string" && draft.quote_number) ||
+        (typeof draft?.quoteNumber === "string" && draft.quoteNumber) ||
+        (typeof draft?.quote_number_text === "string" && draft.quote_number_text) ||
+        (typeof draft?.quoteNumberText === "string" && draft.quoteNumberText) ||
+        null;
+
+      headerPayload.quote_number = existingFromDraft || (await getNextQuoteNumberFallback());
     }
 
-    const draft = draftFromBody as any;
-
-    // Prefer explicit quoteId (top-level) then draft.quoteId; if missing, create one.
-    const finalQuoteId: string =
-      (quoteId as string) || (draft.quoteId as string) ||
-      (globalThis.crypto?.randomUUID?.() ?? "");
-
-    if (!finalQuoteId) {
-      return NextResponse.json(
-        { ok: false, error: "quoteId is required (could not be generated)" },
-        { status: 400 }
-      );
-    }
-
-    if (!Array.isArray(draft.lines) || draft.lines.length === 0) {
-      return NextResponse.json(
-        { ok: false, error: "At least one line is required" },
-        { status: 400 }
-      );
-    }
-
-    // -------------------------------------------------------
-    // 1) Ensure quote header exists (create if missing)
-    // -------------------------------------------------------
-    // Different DBs may key the quote by `id` (uuid) or by a custom `quote_id`.
-    // We prefer `id` and fall back to `quote_id` if needed.
-    let existing: any = null;
+    // Upsert quote header (quote_id is PK)
     {
-      const r1 = await supabaseAdmin
+      const { error } = await supabaseAdmin
         .from("quotes")
-        .select("id, quote_number")
-        .eq("id", finalQuoteId)
-        .maybeSingle();
-
-      if (r1.error && isMissingColumnError(r1.error)) {
-        const r2 = await supabaseAdmin
-          .from("quotes")
-          .select("quote_id, quote_number")
-          .eq("quote_id", finalQuoteId)
-          .maybeSingle();
-        if (r2.error) throw r2.error;
-        existing = r2.data;
-      } else {
-        if (r1.error) throw r1.error;
-        existing = r1.data;
+        .upsert(headerPayload, { onConflict: "quote_id" });
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
       }
     }
 
-    let quoteNumber: string =
-      (draft.quoteNumber as string) || existing?.quote_number || "";
+    // Only persist lines/items when sending (keeps drafts light)
+    if (status === "SENT") {
+      const lines: any[] = Array.isArray(draft?.lines) ? draft.lines : [];
+      const vehicles: any[] = Array.isArray(draft?.vehicles) ? draft.vehicles : [];
 
-    if (!quoteNumber || quoteNumber === "BORRADOR") {
-      quoteNumber = generateQuoteNumber();
-    }
-
-    // Create quote row if it doesn't exist; otherwise update header basics.
-    // NOTE: Some deployments don't have columns like `vehicle_text` or even `quote_id`.
-    // We retry without optional columns so the API doesn't 500.
-    const headerPayload = {
-      id: finalQuoteId,
-      quote_id: finalQuoteId,
-      quoteId: finalQuoteId,
-      quote_number: quoteNumber,
-      status: "SENT",
-      customer_name: draft.customer_name ?? draft.customerName ?? null,
-      customer_phone: draft.customer_phone ?? draft.customerPhone ?? null,
-      customer_email: draft.customer_email ?? draft.customerEmail ?? null,
-      vehicle_text: (draft as any).vehicle_text ?? (draft as any).vehicleText ?? null,
-    } as Record<string, any>;
-
-    if (!existing) {
-      await safeInsertSingle(
-        "quotes",
-        headerPayload,
-        // optional columns to strip if your schema doesn't have them
-        ["quote_id", "quoteId", "vehicle_text"]
-      );
-    } else {
-      const { id, ...updatePayload } = headerPayload;
-      // Update using whichever primary key column your `quotes` table actually has.
-      // Common patterns are: id, quote_id, quoteId, uuid.
-      const res = await safeUpdateByIdColumns(
-        "quotes",
-        ["id", "quote_id", "quoteId", "uuid"],
-        finalQuoteId,
-        updatePayload,
-        ["quote_id", "quoteId", "vehicle_text"]
-      );
-      if (res.error) throw res.error;
-    }
-
-    // -------------------------------------------------------
-    // 2) Replace lines/items for this quote
-    // -------------------------------------------------------
-    // Clear old draft content (FK column name varies by schema)
-    await safeDeleteByQuoteId("quote_items", finalQuoteId);
-    await safeDeleteByQuoteId("quote_lines", finalQuoteId);
-
-    let grandTotal = 0;
-
-    for (let i = 0; i < draft.lines.length; i++) {
-      const ln = draft.lines[i];
-
-      const lineId: string =
-        (ln.lineId as string) || (globalThis.crypto?.randomUUID?.() ?? "");
-      if (!lineId) {
-        throw new Error("Failed to generate lineId");
+      // Reset previous persisted lines/items (idempotent)
+      {
+        const delItems = await supabaseAdmin.from("quote_items").delete().eq("quote_id", quoteId);
+        if (delItems.error) {
+          return NextResponse.json({ error: delItems.error.message }, { status: 500 });
+        }
+        const delLines = await supabaseAdmin.from("quote_lines").delete().eq("quote_id", quoteId);
+        if (delLines.error) {
+          return NextResponse.json({ error: delLines.error.message }, { status: 500 });
+        }
       }
 
-      const size = ln.size;
-      const quantity = asNumber(ln.requestedQty ?? ln.requested_qty ?? ln.qty ?? 1, 1);
-      const vehicleText = ln.vehicle ?? ln.vehicleText ?? null;
-
-      // Insert line with schema-flexible keys (some projects use different column names)
-      const linePayload: Record<string, any> = {
-        quote_id: finalQuoteId,
-        quoteId: finalQuoteId,
-        line_id: lineId,
-        lineId: lineId,
-        line_no: i + 1,
-        size,
-        quantity,
-        requested_qty: quantity,
-        requestedQty: quantity,
-        vehicle_text: vehicleText,
-        vehicle: vehicleText,
-      };
-
-      await safeInsertSingle("quote_lines", linePayload, [
-        "quoteId",
-        "lineId",
-        "line_no",
-        "quantity",
-        "requested_qty",
-        "requestedQty",
-        "vehicle_text",
-        "vehicle",
-      ]);
-
-      const options = Array.isArray(ln.options) ? ln.options : [];
-      const included = options.filter((o: any) => o?.included !== false);
-
-      for (const o of included) {
-        const quoteItemId: string =
-          (o.quoteItemId as string) || (globalThis.crypto?.randomUUID?.() ?? "");
-        if (!quoteItemId) throw new Error("Failed to generate quoteItemId");
-
-        const qty = asNumber(o.qty ?? o.quotedQty ?? quantity, quantity);
-        const priceEach = asNumber(o.price_each ?? o.priceEach ?? 0, 0);
-        const total = asNumber(o.total ?? o.totalTires ?? priceEach * qty, priceEach * qty);
-
-        grandTotal += total;
-
-        const itemPayload: Record<string, any> = {
-          quote_id: finalQuoteId,
-          quoteId: finalQuoteId,
-          line_id: lineId,
-          lineId: lineId,
-          quote_item_id: quoteItemId,
-          quoteItemId: quoteItemId,
-
-          tier: o.tier ?? null,
-          provider: o.provider ?? "N/A",
-          sku: o.sku ?? null,
-          size: o.size ?? size ?? null,
-          brand: o.brand ?? null,
-          model: o.model ?? null,
-          load_speed: o.loadSpeed ?? o.load_speed ?? null,
-
-          stock: asNumber(o.stock ?? 0, 0),
-          cost: asNumber(o.cost ?? o.cost_each ?? 0, 0),
-          price_each: priceEach,
-
-          qty,
-          total,
+      // Build quote_lines rows
+      const lineRows = lines.map((ln, idx) => {
+        const vehicleIndex = asNumber(ln?.vehicleIndex, 0);
+        const v = vehicles[vehicleIndex] ?? {};
+        const line_id = (globalThis.crypto as any)?.randomUUID?.() ?? require("crypto").randomUUID();
+        return {
+          line_id,
+          quote_id: quoteId,
+          line_no: idx + 1,
+          size: String(ln?.size ?? "").trim(),
+          quantity: asNumber(ln?.quantity, 1) || 1,
+          vehicle_make: v?.make ?? null,
+          vehicle_model: v?.model ?? null,
+          vehicle_year: v?.year ?? null,
+          vehicle_index: Number.isFinite(vehicleIndex) ? vehicleIndex : null,
         };
+      });
 
-        await safeInsertSingle("quote_items", itemPayload, [
-          "quoteId",
-          "lineId",
-          "quoteItemId",
-          "load_speed",
-          "stock",
-          "cost",
-        ]);
+      // Validate at least one line with size
+      const validLineRows = lineRows.filter((r) => r.size);
+
+      if (validLineRows.length === 0) {
+        return NextResponse.json(
+          { error: "At least one line with a valid size is required to send." },
+          { status: 400 }
+        );
+      }
+
+      {
+        const { error } = await supabaseAdmin.from("quote_lines").insert(validLineRows);
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+      }
+
+      // Build quote_items rows
+      const installEach = asNumber(draft?.installEach ?? draft?.install, 0);
+      const extrasEach = asNumber(draft?.extrasEach ?? draft?.extras, 0);
+
+      const itemRows: any[] = [];
+      const selectedByLine: Array<{ line_id: string; selected_quote_item_id: string }> = [];
+
+      validLineRows.forEach((lr, idx) => {
+        const ln = lines[idx] ?? {};
+        const qty = asNumber(ln?.quantity, 1) || 1;
+        const options: any[] = Array.isArray(ln?.options) ? ln.options : [];
+
+        // Keep ordering stable
+        options.forEach((opt, rank) => {
+          const quote_item_id =
+            (typeof opt?.quoteItemId === "string" && opt.quoteItemId) ||
+            (typeof opt?.quote_item_id === "string" && opt.quote_item_id) ||
+            ((globalThis.crypto as any)?.randomUUID?.() ?? require("crypto").randomUUID());
+
+          const priceEach = asNumber(opt?.priceEach ?? opt?.price_each, 0);
+          const totalTires = asNumber(opt?.totalTires ?? opt?.total_tires, priceEach * qty);
+          const totalWithServices = asNumber(
+            opt?.totalWithServices ?? opt?.total_with_services,
+            totalTires + (installEach + extrasEach) * qty
+          );
+
+          itemRows.push({
+            quote_item_id,
+            quote_id: quoteId,
+            line_id: lr.line_id,
+            quote_line_id: lr.line_id,
+            rank: Number.isFinite(rank) ? rank + 1 : null,
+            provider: opt?.provider ?? null,
+            sku: opt?.sku ?? null,
+            tire_id: opt?.tireId ?? opt?.tire_id ?? null,
+            brand: opt?.brand ?? null,
+            model: opt?.model ?? null,
+            load_speed: opt?.loadSpeed ?? opt?.load_speed ?? null,
+            size: lr.size,
+            stock: opt?.stock ?? null,
+            cost: opt?.costEach ?? opt?.cost ?? null,
+            price_each: priceEach,
+            total_tires: totalTires,
+            total_with_services: totalWithServices,
+            included: typeof opt?.included === "boolean" ? opt.included : true,
+          });
+        });
+
+        // selected option
+        const selectedId =
+          (typeof ln?.selectedOptionId === "string" && ln.selectedOptionId) ||
+          (typeof ln?.selected_quote_item_id === "string" && ln.selected_quote_item_id) ||
+          null;
+
+        if (selectedId) {
+          // selectedOptionId in UI refers to quoteItemId
+          const found = itemRows.find((r) => r.line_id === lr.line_id && r.quote_item_id === selectedId);
+          if (found) selectedByLine.push({ line_id: lr.line_id, selected_quote_item_id: found.quote_item_id });
+        }
+      });
+
+      if (itemRows.length > 0) {
+        const { error } = await supabaseAdmin.from("quote_items").insert(itemRows);
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+      }
+
+      // Update selected item per line
+      for (const sel of selectedByLine) {
+        const { error } = await supabaseAdmin
+          .from("quote_lines")
+          .update({ selected_quote_item_id: sel.selected_quote_item_id })
+          .eq("line_id", sel.line_id);
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
       }
     }
 
-    // -------------------------------------------------------
-    // 3) Update totals (best-effort)
-    //    Nota: tu tabla `quotes` puede NO tener columna `grand_total`.
-    //    Si no existe, no rompemos el flujo: los totales viven en quote_items.
-    // -------------------------------------------------------
-    // Totals: schema-flexible, do not break if columns differ
-    await safeUpdate(
-      "quotes",
-      { id: finalQuoteId },
-      { grand_total: grandTotal, total: grandTotal, grandTotal },
-      ["grand_total", "total", "grandTotal"]
-    );
-
-    return NextResponse.json({
-      ok: true,
-      quoteId: finalQuoteId,
-      quoteNumber,
-      grandTotal,
-    });
-  } catch (err: any) {
-    console.error("QUOTE STATUS ERROR:", err);
-    return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unknown error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: true, quote_id: quoteId, status: headerPayload.status, quote_number: headerPayload.quote_number ?? null });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message ?? "Unknown error" }, { status: 500 });
   }
 }
