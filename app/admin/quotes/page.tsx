@@ -7,13 +7,18 @@ function fmtVehicle(q: any) {
   return parts.length ? parts.join(" ") : "—";
 }
 
+type SearchParams = { page?: string; pageSize?: string };
+
+// Next.js 15 types `searchParams` as a Promise in the generated `PageProps`.
+// Accept both (Promise and plain object) so it builds in all environments.
 export default async function QuotesPage({
   searchParams,
 }: {
-  searchParams?: { page?: string; pageSize?: string };
+  searchParams?: Promise<SearchParams> | SearchParams;
 }) {
-  const page = Math.max(1, Number(searchParams?.page ?? "1") || 1);
-  const pageSize = Math.min(100, Math.max(5, Number(searchParams?.pageSize ?? "20") || 20));
+  const sp: SearchParams = searchParams ? await Promise.resolve(searchParams) : {};
+  const page = Math.max(1, Number(sp.page ?? "1") || 1);
+  const pageSize = Math.min(100, Math.max(5, Number(sp.pageSize ?? "20") || 20));
 
   const { data: quotes, count, page: currentPage, pageSize: currentPageSize } = await getQuotesPaged(page, pageSize);
   const total = typeof count === "number" ? count : quotes.length;
