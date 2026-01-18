@@ -18,12 +18,6 @@ function generateQuoteNo(): number {
   return Date.now();
 }
 
-// Your `quotes.quote_no` is BIGINT NOT NULL (and has no default).
-// If we don't provide it on INSERT, Postgres will reject the row.
-function generateQuoteNo(): number {
-  // Date.now() (13 digits) fits safely in JS number and in Postgres BIGINT.
-  return Date.now();
-}
 
 function asNumber(v: any, fallback = 0) {
   const n = Number(v);
