@@ -1,100 +1,177 @@
-
 import Link from "next/link";
+
 import { getQuotesPaged } from "@/lib/quotes/getQuotes";
 
-function fmtVehicle(q: any) {
-  const parts = [q.vehicle_make, q.vehicle_model, q.vehicle_year].filter(Boolean);
-  return parts.length ? parts.join(" ") : "—";
+type SP = Record<string, string | string[] | undefined>;
+
+function toInt(v: unknown, fallback: number) {
+  const n = Number(Array.isArray(v) ? v[0] : v);
+  return Number.isFinite(n) ? n : fallback;
 }
 
-type SearchParams = { page?: string; pageSize?: string };
+export default async function QuotesPage(props: any) {
+  // Next.js 15 may pass `searchParams` as a Promise depending on typings.
+  const sp: SP = await Promise.resolve((props?.searchParams ?? {}) as any);
 
-// Next.js 15's generated PageProps expects `searchParams` to be a Promise.
-// We'll keep the type compatible (Promise-only) and still safely handle
-// any runtime shape by wrapping with `Promise.resolve`.
-export default async function QuotesPage(props: { searchParams?: Promise<SearchParams> }) {
-  const sp: SearchParams = await Promise.resolve((props as any).searchParams ?? {});
-  const page = Math.max(1, Number(sp.page ?? "1") || 1);
-  const pageSize = Math.min(100, Math.max(5, Number(sp.pageSize ?? "20") || 20));
+  const page = Math.max(1, toInt(sp.page, 1));
+  const pageSize = Math.min(100, Math.max(5, toInt(sp.pageSize, 20)));
 
-  // getQuotesPaged() returns { rows, total, page, pageSize }
-  const { rows: quotes, total, page: currentPage, pageSize: currentPageSize } = await getQuotesPaged(page, pageSize);
+  const { rows: quotes, total, page: currentPage, pageSize: currentPageSize } =
+    await getQuotesPaged({ page, pageSize });
+
   const totalPages = Math.max(1, Math.ceil(total / currentPageSize));
   const hasPrev = currentPage > 1;
   const hasNext = currentPage < totalPages;
 
-  const qs = (p: number) => `/admin/quotes?page=${p}&pageSize=${currentPageSize}`;
+  const mkUrl = (p: number, ps = currentPageSize) =>
+    `/admin/quotes?page=${p}&pageSize=${ps}`;
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <h1 style={{ margin: 0 }}>Cotizaciones</h1>
-        <div style={{ color: "#666" }}>{total} registro(s)</div>
+    <div className="p-6">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <div>
+          <h1 className="text-2xl font-bold">Quotes</h1>
+          <p className="text-sm text-gray-500">
+            Showing newest first • Total: {total}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="text-sm text-gray-600">Page size</div>
+          <div className="flex items-center gap-1">
+            {[10, 20, 50].map((ps) => (
+              <Link
+                key={ps}
+                href={mkUrl(1, ps)}
+                className={
+                  "px-2 py-1 rounded border text-sm " +
+                  (ps === currentPageSize
+                    ? "bg-black text-white border-black"
+                    : "bg-white text-gray-700 hover:bg-gray-50")
+                }
+              >
+                {ps}
+              </Link>
+            ))}
+          </div>
+        </div>
       </div>
 
-      <div style={{ marginTop: 12, overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
-          <thead>
+      <div className="overflow-x-auto border rounded-xl">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50">
             <tr>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 10 }}>Folio</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 10 }}>Email</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 10 }}>Vehículo</th>
-              <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 10 }}>Min stock</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 10 }}>ID</th>
-              <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 10 }}>Acciones</th>
+              <th className="text-left p-3">Quote #</th>
+              <th className="text-left p-3">Customer</th>
+              <th className="text-left p-3">Vehicle</th>
+              <th className="text-left p-3">Status</th>
+              <th className="text-left p-3">Created</th>
+              <th className="text-right p-3">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {quotes.map((q: any) => (
-              <tr key={q.quote_id}>
-                <td style={{ padding: 10, borderBottom: "1px solid #f2f2f2" }}>
-                  <b>{q.quote_number ?? "—"}</b>
-                </td>
-                <td style={{ padding: 10, borderBottom: "1px solid #f2f2f2" }}>{q.customer_email ?? "—"}</td>
-                <td style={{ padding: 10, borderBottom: "1px solid #f2f2f2" }}>{fmtVehicle(q)}</td>
-                <td style={{ padding: 10, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>{q.min_stock ?? "—"}</td>
-                <td style={{ padding: 10, borderBottom: "1px solid #f2f2f2", color: "#666" }}>
-                  <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}>
-                    {q.quote_id}
-                  </span>
-                </td>
-                <td style={{ padding: 10, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>
-                  <Link href={`/admin/quotes/${q.quote_id}`} style={{ textDecoration: "underline" }}>
-                    Gestionar
-                  </Link>
+            {quotes.map((q: any) => {
+              const vehicle =
+                q.vehicle_text ||
+                [q.vehicle_make, q.vehicle_model, q.vehicle_year]
+                  .filter(Boolean)
+                  .join(" ");
+              const customer = q.customer_name || q.customer_email || "—";
+              const created = q.created_at
+                ? new Date(q.created_at).toLocaleString()
+                : "—";
+              return (
+                <tr key={q.quote_id} className="border-t">
+                  <td className="p-3 font-medium">
+                    {q.quote_number || q.quote_no || "(draft)"}
+                  </td>
+                  <td className="p-3">
+                    <div className="font-medium">{customer}</div>
+                    <div className="text-xs text-gray-500">
+                      {q.customer_phone || ""}
+                    </div>
+                  </td>
+                  <td className="p-3">{vehicle || "—"}</td>
+                  <td className="p-3">
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs border">
+                      {q.status}
+                    </span>
+                  </td>
+                  <td className="p-3">{created}</td>
+                  <td className="p-3 text-right">
+                    <Link
+                      href={`/admin/quotes/${q.quote_id}`}
+                      className="inline-flex items-center px-3 py-1.5 rounded-lg bg-black text-white hover:opacity-90"
+                    >
+                      Manage
+                    </Link>
+                  </td>
+                </tr>
+              );
+            })}
+
+            {quotes.length === 0 && (
+              <tr>
+                <td className="p-6 text-center text-gray-500" colSpan={6}>
+                  No quotes found.
                 </td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>
 
-      <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ color: "#666", fontSize: 12 }}>
-          Página <b>{currentPage}</b> de <b>{totalPages}</b> · {currentPageSize} por página
+      <div className="flex items-center justify-between mt-4">
+        <div className="text-sm text-gray-600">
+          Page {currentPage} of {totalPages}
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
-          {hasPrev ? (
-            <Link href={qs(currentPage - 1)} style={{ textDecoration: "underline" }}>
-              ← Anterior
-            </Link>
-          ) : (
-            <span style={{ color: "#bbb" }}>← Anterior</span>
-          )}
-
-          {hasNext ? (
-            <Link href={qs(currentPage + 1)} style={{ textDecoration: "underline" }}>
-              Siguiente →
-            </Link>
-          ) : (
-            <span style={{ color: "#bbb" }}>Siguiente →</span>
-          )}
+        <div className="flex items-center gap-2">
+          <Link
+            href={mkUrl(1)}
+            className={
+              "px-3 py-1.5 rounded border text-sm " +
+              (!hasPrev
+                ? "opacity-50 pointer-events-none"
+                : "hover:bg-gray-50")
+            }
+          >
+            First
+          </Link>
+          <Link
+            href={mkUrl(currentPage - 1)}
+            className={
+              "px-3 py-1.5 rounded border text-sm " +
+              (!hasPrev
+                ? "opacity-50 pointer-events-none"
+                : "hover:bg-gray-50")
+            }
+          >
+            Prev
+          </Link>
+          <Link
+            href={mkUrl(currentPage + 1)}
+            className={
+              "px-3 py-1.5 rounded border text-sm " +
+              (!hasNext
+                ? "opacity-50 pointer-events-none"
+                : "hover:bg-gray-50")
+            }
+          >
+            Next
+          </Link>
+          <Link
+            href={mkUrl(totalPages)}
+            className={
+              "px-3 py-1.5 rounded border text-sm " +
+              (!hasNext
+                ? "opacity-50 pointer-events-none"
+                : "hover:bg-gray-50")
+            }
+          >
+            Last
+          </Link>
         </div>
-      </div>
-
-      <div style={{ marginTop: 10, color: "#666", fontSize: 12 }}>
-        Nota: Esta vista es tolerante a cambios de esquema. Si agregas columnas como <b>status</b>, <b>customer_name</b> o <b>created_at</b>, podemos enriquecer la gestión.
       </div>
     </div>
   );
