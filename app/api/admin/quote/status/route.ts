@@ -77,8 +77,11 @@ export async function POST(req: Request) {
     const vehicleModel = pick<string | null>(draft, ["vehicle_model", "vehicleModel"], null);
     const vehicleYear = pick<number | null>(draft, ["vehicle_year", "vehicleYear"], null);
 
-    const vehicleText = pick<string | null>(draft, ["vehicle_text", "vehicleText"], null) ??
-      [vehicleMake, vehicleModel, vehicleYear].filter(Boolean).join(" ") || null;
+    // NOTE: parenthesize when mixing ?? with || (webpack parser rule)
+    const vehicleText = (
+      pick<string | null>(draft, ["vehicle_text", "vehicleText"], null) ??
+        [vehicleMake, vehicleModel, vehicleYear].filter(Boolean).join(" ")
+    ) || null;
 
     const headerPayload: Record<string, any> = {
       quote_number: quoteNumber,
