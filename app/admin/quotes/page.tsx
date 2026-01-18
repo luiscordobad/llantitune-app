@@ -1,20 +1,33 @@
 
 import Link from "next/link";
-import { getQuotes } from "@/lib/quotes/getQuotes";
+import { getQuotesPaged } from "@/lib/quotes/getQuotes";
 
 function fmtVehicle(q: any) {
   const parts = [q.vehicle_make, q.vehicle_model, q.vehicle_year].filter(Boolean);
   return parts.length ? parts.join(" ") : "—";
 }
 
-export default async function QuotesPage() {
-  const quotes = await getQuotes(200);
+export default async function QuotesPage({
+  searchParams,
+}: {
+  searchParams?: { page?: string; pageSize?: string };
+}) {
+  const page = Math.max(1, Number(searchParams?.page ?? "1") || 1);
+  const pageSize = Math.min(100, Math.max(5, Number(searchParams?.pageSize ?? "20") || 20));
+
+  const { data: quotes, count, page: currentPage, pageSize: currentPageSize } = await getQuotesPaged(page, pageSize);
+  const total = typeof count === "number" ? count : quotes.length;
+  const totalPages = Math.max(1, Math.ceil(total / currentPageSize));
+  const hasPrev = currentPage > 1;
+  const hasNext = currentPage < totalPages;
+
+  const qs = (p: number) => `/admin/quotes?page=${p}&pageSize=${currentPageSize}`;
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0 }}>Cotizaciones</h1>
-        <div style={{ color: "#666" }}>{quotes.length} registro(s)</div>
+        <div style={{ color: "#666" }}>{total} registro(s)</div>
       </div>
 
       <div style={{ marginTop: 12, overflowX: "auto" }}>
@@ -52,6 +65,30 @@ export default async function QuotesPage() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ color: "#666", fontSize: 12 }}>
+          Página <b>{currentPage}</b> de <b>{totalPages}</b> · {currentPageSize} por página
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          {hasPrev ? (
+            <Link href={qs(currentPage - 1)} style={{ textDecoration: "underline" }}>
+              ← Anterior
+            </Link>
+          ) : (
+            <span style={{ color: "#bbb" }}>← Anterior</span>
+          )}
+
+          {hasNext ? (
+            <Link href={qs(currentPage + 1)} style={{ textDecoration: "underline" }}>
+              Siguiente →
+            </Link>
+          ) : (
+            <span style={{ color: "#bbb" }}>Siguiente →</span>
+          )}
+        </div>
       </div>
 
       <div style={{ marginTop: 10, color: "#666", fontSize: 12 }}>

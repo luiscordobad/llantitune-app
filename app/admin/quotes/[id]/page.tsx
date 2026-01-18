@@ -25,7 +25,8 @@ export default async function QuoteDetailPage({ params }: PageProps) {
   // Some DBs don't have a `status` column. In that case, having a folio/quote_number
   // is the best signal that the quote was "sent"/final.
   const isSent = quote?.status === 'SENT' || !!quote?.quote_number || !!quote?.quote_no
-  const hasSelectedItem = items?.some(i => i.included)
+  const includedItems = (items ?? []).filter((i) => i.included)
+  const hasSelectedItem = includedItems.length > 0
 
   async function saveSelection(formData: FormData) {
     'use server'
@@ -49,13 +50,19 @@ export default async function QuoteDetailPage({ params }: PageProps) {
       </div>
 
       <form action={saveSelection}>
-        {items?.map(item => (
+        {includedItems.length === 0 && (
+          <div style={{ padding: 12, background: '#fff7ed', borderRadius: 8, border: '1px solid #fed7aa' }}>
+            No hay opciones <b>incluidas</b> guardadas para esta cotización.
+          </div>
+        )}
+
+        {includedItems.map(item => (
           <label
             key={item.quote_item_id}
             style={{
               display: 'block',
               marginBottom: 12,
-              opacity: hasSelectedItem && !item.included ? 0.5 : 1,
+              opacity: 1,
             }}
           >
             <input
