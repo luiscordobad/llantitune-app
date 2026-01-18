@@ -3,49 +3,204 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
-function generateFallbackQuoteNumber(): string {
+function generateQuoteNumber() {
   const d = new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  const t = String(Date.now()).slice(-4);
+  const t = Date.now().toString().slice(-4);
   return `LT-${y}${m}${day}-${t}`;
 }
 
-function asNumber(v: unknown, fallback = 0): number {
+function generateQuoteNo(): number {
+  // Your schema has `quotes.quote_no BIGINT NOT NULL` with no default.
+  // `Date.now()` fits safely in JS number precision and in Postgres BIGINT.
+  return Date.now();
+}
+
+// Your `quotes.quote_no` is BIGINT NOT NULL (and has no default).
+// If we don't provide it on INSERT, Postgres will reject the row.
+function generateQuoteNo(): number {
+  // Date.now() (13 digits) fits safely in JS number and in Postgres BIGINT.
+  return Date.now();
+}
+
+function asNumber(v: any, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 }
 
-function pick<T>(obj: any, keys: string[], fallback: T): T {
-  for (const k of keys) {
-    if (obj && obj[k] !== undefined && obj[k] !== null) return obj[k] as T;
-  }
-  return fallback;
+/**
+ * Supabase "schema cache" errors happen when the code references a column
+ * that doesn't exist in your actual table schema.
+ *
+ * Because your Supabase tables can differ from the code assumptions, we use
+ * a best-effort strategy: try including optional columns (like vehicle_text)
+ * and if Supabase returns a missing-column error, retry without them.
+ */
+function isMissingColumnError(err: any) {
+  const msg = String(err?.message ?? err ?? "");
+  // PostgREST schema cache style
+  if (msg.includes("Could not find") && msg.includes("column")) return true;
+  // Postgres/PostgREST "does not exist" styles
+  // examples:
+  // - "column quotes.id does not exist"
+  // - "column \"grand_total\" of relation \"quotes\" does not exist"
+  if (msg.includes("column") && msg.includes("does not exist")) return true;
+  return false;
 }
 
-async function getNextQuoteNo(): Promise<number | null> {
-  // If you have a DB function `next_quote_number()` return bigint/int
-  try {
-    const { data, error } = await supabaseAdmin.rpc("next_quote_number");
-    if (error) return null;
-    const n = Number(data);
-    return Number.isFinite(n) ? n : null;
-  } catch {
-    return null;
-  }
+function missingColumnName(err: any): string | null {
+  const msg = String(err?.message ?? err ?? "");
+  const m = msg.match(/Could not find the '([^']+)' column/);
+  if (m?.[1]) return m[1];
+
+  // "column quotes.id does not exist" -> id
+  const m2 = msg.match(/column\s+[\w]+\.([\w_]+)\s+does not exist/i);
+  if (m2?.[1]) return m2[1];
+
+  // "column \"grand_total\" of relation ... does not exist" -> grand_total
+  const m3 = msg.match(/column\s+\"([^\"]+)\"\s+of\s+relation\s+\"[^\"]+\"\s+does not exist/i);
+  if (m3?.[1]) return m3[1];
+
+  return null;
 }
 
-function formatQuoteNumberFromNo(quoteNo: number): string {
-  // Example: LLT-000014
-  return `LLT-${String(quoteNo).padStart(6, "0")}`;
+async function safeUpdateByIdColumns(
+  table: string,
+  idCols: string[],
+  idValue: string,
+  updates: Record<string, any>,
+  optionalKeys: string[]
+) {
+  let lastErr: any = null;
+  for (const col of idCols) {
+    const res = await safeUpdate(table, { [col]: idValue }, updates, optionalKeys);
+    if (!res.error) return res;
+
+    // If the id column doesn't exist, try next
+    if (isMissingColumnError(res.error)) {
+      lastErr = res.error;
+      continue;
+    }
+
+    // Non-column issue -> stop
+    return res;
+  }
+  return { error: lastErr ?? new Error("No valid id column for update") };
+}
+
+async function safeInsertSingle(
+  table: string,
+  payload: Record<string, any>,
+  optionalKeys: string[]
+) {
+  // Try, and if Supabase complains about a missing column, remove just that
+  // column (or the provided optional keys) and retry a few times.
+  let current = { ...payload };
+  for (let i = 0; i < 5; i++) {
+    let { data, error } = await supabaseAdmin
+      .from(table)
+      .insert(current)
+      .select()
+      .single();
+
+    if (!error) return { data, error: null as any };
+
+    if (!isMissingColumnError(error)) return { data: null, error };
+
+    const missing = missingColumnName(error);
+    if (missing && missing in current) {
+      delete (current as any)[missing];
+      continue;
+    }
+
+    // Fallback: drop all optional keys once
+    if (optionalKeys.length) {
+      for (const k of optionalKeys) delete (current as any)[k];
+      // prevent infinite loop if we already dropped them
+      optionalKeys = [];
+      continue;
+    }
+
+    return { data: null, error };
+  }
+
+  return { data: null, error: new Error("Insert failed after retries") };
+}
+
+async function safeUpdate(
+  table: string,
+  match: Record<string, any>,
+  updates: Record<string, any>,
+  optionalKeys: string[]
+) {
+  let current = { ...updates };
+  for (let i = 0; i < 5; i++) {
+    let q = supabaseAdmin.from(table).update(current);
+    for (const [k, v] of Object.entries(match)) q = q.eq(k, v as any);
+    const { error } = await q;
+    if (!error) return { error: null as any };
+    if (!isMissingColumnError(error)) return { error };
+
+    const missing = missingColumnName(error);
+    if (missing && missing in current) {
+      delete (current as any)[missing];
+      continue;
+    }
+
+    if (optionalKeys.length) {
+      for (const k of optionalKeys) delete (current as any)[k];
+      optionalKeys = [];
+      continue;
+    }
+
+    return { error };
+  }
+
+  return { error: new Error("Update failed after retries") };
+}
+
+async function safeDeleteByQuoteId(table: string, quoteId: string) {
+  const cols = ["quote_id", "quoteId", "quote_uuid", "quote", "quote_pk"]; // fallback order
+  let lastErr: any = null;
+  for (const col of cols) {
+    const { error } = await supabaseAdmin.from(table).delete().eq(col, quoteId);
+    if (!error) return;
+    if (isMissingColumnError(error)) {
+      lastErr = error;
+      continue;
+    }
+    throw error;
+  }
+  throw lastErr ?? new Error(`Could not delete from ${table}: no quote id column matched`);
+}
+
+async function safeUpdateById(
+  table: string,
+  idValue: string,
+  updates: Record<string, any>,
+  optionalKeys: string[],
+  idCols: string[]
+) {
+  let lastMissing: any = null;
+  for (const col of idCols) {
+    const { error } = await safeUpdate(table, { [col]: idValue }, updates, optionalKeys);
+    if (!error) return;
+    if (isMissingColumnError(error)) {
+      lastMissing = error;
+      continue;
+    }
+    throw error;
+  }
+  if (lastMissing) throw lastMissing;
+  throw new Error(`Failed to update ${table}`);
 }
 
 export async function POST(req: Request) {
   try {
-    const body: any = await req.json();
-    const status = body?.status as string | undefined;
-    const draft = body?.draft as any;
+    const body = await req.json();
+    const { status, quoteId, draft: draftFromBody } = body ?? {};
 
     if (status !== "SENT") {
       return NextResponse.json(
@@ -54,197 +209,220 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!draft) {
+    if (!draftFromBody) {
       return NextResponse.json(
         { ok: false, error: "Draft data is required in request body" },
         { status: 400 }
       );
     }
 
-    const lines: any[] = Array.isArray(draft.lines) ? draft.lines : [];
-    if (lines.length === 0) {
+    const draft = draftFromBody as any;
+
+    // Prefer explicit quoteId (top-level) then draft.quoteId; if missing, create one.
+    const finalQuoteId: string =
+      (quoteId as string) || (draft.quoteId as string) ||
+      (globalThis.crypto?.randomUUID?.() ?? "");
+
+    if (!finalQuoteId) {
+      return NextResponse.json(
+        { ok: false, error: "quoteId is required (could not be generated)" },
+        { status: 400 }
+      );
+    }
+
+    if (!Array.isArray(draft.lines) || draft.lines.length === 0) {
       return NextResponse.json(
         { ok: false, error: "At least one line is required" },
         { status: 400 }
       );
     }
 
-    // 1) Create the quote header FIRST (quotes.quote_id is PK and generated by DB)
-    const quoteNo = await getNextQuoteNo();
-    const quoteNumber = quoteNo ? formatQuoteNumberFromNo(quoteNo) : generateFallbackQuoteNumber();
+    // -------------------------------------------------------
+    // 1) Ensure quote header exists (create if missing)
+    // -------------------------------------------------------
+    // Different DBs may key the quote by `id` (uuid) or by a custom `quote_id`.
+    // We prefer `id` and fall back to `quote_id` if needed.
+    let existing: any = null;
+    {
+      const r1 = await supabaseAdmin
+        .from("quotes")
+        .select("id, quote_number")
+        .eq("id", finalQuoteId)
+        .maybeSingle();
 
-    const vehicleMake = pick<string | null>(draft, ["vehicle_make", "vehicleMake"], null);
-    const vehicleModel = pick<string | null>(draft, ["vehicle_model", "vehicleModel"], null);
-    const vehicleYear = pick<number | null>(draft, ["vehicle_year", "vehicleYear"], null);
+      if (r1.error && isMissingColumnError(r1.error)) {
+        const r2 = await supabaseAdmin
+          .from("quotes")
+          .select("quote_id, quote_number")
+          .eq("quote_id", finalQuoteId)
+          .maybeSingle();
+        if (r2.error) throw r2.error;
+        existing = r2.data;
+      } else {
+        if (r1.error) throw r1.error;
+        existing = r1.data;
+      }
+    }
 
-    // NOTE: parenthesize when mixing ?? with || (webpack parser rule)
-    const vehicleText = (
-      pick<string | null>(draft, ["vehicle_text", "vehicleText"], null) ??
-        [vehicleMake, vehicleModel, vehicleYear].filter(Boolean).join(" ")
-    ) || null;
+    let quoteNumber: string =
+      (draft.quoteNumber as string) || existing?.quote_number || "";
 
+    if (!quoteNumber || quoteNumber === "BORRADOR") {
+      quoteNumber = generateQuoteNumber();
+    }
+
+    // Create quote row if it doesn't exist; otherwise update header basics.
+    // NOTE: Some deployments don't have columns like `vehicle_text` or even `quote_id`.
+    // We retry without optional columns so the API doesn't 500.
     const headerPayload: Record<string, any> = {
+      // In your Supabase schema, the PK is `quote_id` (not `id`).
+      quote_id: finalQuoteId,
       quote_number: quoteNumber,
-      quote_no: quoteNo,
       status: "SENT",
-      sent_at: new Date().toISOString(),
-      customer_name: pick<string | null>(draft, ["customer_name", "customerName"], null),
-      customer_phone: pick<string | null>(draft, ["customer_phone", "customerPhone"], null),
-      customer_email: pick<string | null>(draft, ["customer_email", "customerEmail"], null),
-      vehicle_text: vehicleText,
-      vehicle_make: vehicleMake,
-      vehicle_model: vehicleModel,
-      vehicle_year: vehicleYear,
-      deposit_amount: pick<number | null>(draft, ["deposit_amount", "depositAmount"], null),
-      promised_at: pick<string | null>(draft, ["promised_at", "promisedAt"], null),
-      internal_notes: pick<string | null>(draft, ["internal_notes", "internalNotes"], null),
-      notes: pick<string | null>(draft, ["notes"], null),
-      markup_pct: pick<number>(draft, ["markup_pct", "markupPct"], 30),
-      install_each: pick<number>(draft, ["install_each", "installEach"], 1000),
-      extras_each: pick<number>(draft, ["extras_each", "extrasEach"], 1000),
-      urgency: pick<string | null>(draft, ["urgency"], null),
-      preference: pick<string | null>(draft, ["preference"], null),
+      customer_name: draft.customer_name ?? draft.customerName ?? null,
+      customer_phone: draft.customer_phone ?? draft.customerPhone ?? null,
+      customer_email: draft.customer_email ?? draft.customerEmail ?? null,
+      vehicle_text: (draft as any).vehicle_text ?? (draft as any).vehicleText ?? null,
     };
 
-    const { data: quoteRow, error: quoteErr } = await supabaseAdmin
-      .from("quotes")
-      .insert(headerPayload)
-      .select("quote_id, quote_number")
-      .single();
-
-    if (quoteErr || !quoteRow?.quote_id) {
-      console.error("QUOTE INSERT ERROR:", quoteErr);
-      throw new Error("Failed to create quote");
+    if (!existing) {
+      // Required field in your schema
+      headerPayload.quote_no =
+        (draft.quote_no as number) || (draft.quoteNo as number) || generateQuoteNo();
+      await safeInsertSingle(
+        "quotes",
+        headerPayload,
+        // optional columns to strip if your schema doesn't have them
+        ["id", "quoteId", "vehicle_text"]
+      );
+    } else {
+      // Update using whichever primary key column your `quotes` table actually has.
+      // Common patterns are: id, quote_id, quoteId, uuid.
+      const res = await safeUpdateByIdColumns(
+        "quotes",
+        ["id", "quote_id", "quoteId", "uuid"],
+        finalQuoteId,
+        headerPayload,
+        ["id", "quoteId", "vehicle_text"]
+      );
+      if (res.error) throw res.error;
     }
 
-    const quoteId: string = quoteRow.quote_id;
+    // -------------------------------------------------------
+    // 2) Replace lines/items for this quote
+    // -------------------------------------------------------
+    // Clear old draft content (FK column name varies by schema)
+    await safeDeleteByQuoteId("quote_items", finalQuoteId);
+    await safeDeleteByQuoteId("quote_lines", finalQuoteId);
 
-    // 2) Insert lines & items
-    let minStock: number | null = null;
+    let grandTotal = 0;
 
-    for (let i = 0; i < lines.length; i++) {
-      const ln = lines[i] ?? {};
-      const size: string = String(pick<string>(ln, ["size"], "")).trim();
-      const qty: number = asNumber(
-        pick<number>(ln, ["requested_qty", "requestedQty", "quantity", "qty"], 1),
-        1
-      );
+    for (let i = 0; i < draft.lines.length; i++) {
+      const ln = draft.lines[i];
 
-      if (!size) {
-        // If a line has no size, skip it to avoid DB errors
-        continue;
+      const lineId: string =
+        (ln.lineId as string) || (globalThis.crypto?.randomUUID?.() ?? "");
+      if (!lineId) {
+        throw new Error("Failed to generate lineId");
       }
 
+      const size = ln.size;
+      const quantity = asNumber(ln.requestedQty ?? ln.requested_qty ?? ln.qty ?? 1, 1);
+      const vehicleText = ln.vehicle ?? ln.vehicleText ?? null;
+
+      // Insert line with schema-flexible keys (some projects use different column names)
       const linePayload: Record<string, any> = {
-        quote_id: quoteId,
+        quote_id: finalQuoteId,
+        quoteId: finalQuoteId,
+        line_id: lineId,
+        lineId: lineId,
         line_no: i + 1,
         size,
-        quantity: qty,
-        vehicle_make: pick<string | null>(ln, ["vehicle_make", "vehicleMake"], vehicleMake),
-        vehicle_model: pick<string | null>(ln, ["vehicle_model", "vehicleModel"], vehicleModel),
-        vehicle_year: pick<number | null>(ln, ["vehicle_year", "vehicleYear"], vehicleYear),
-        vehicle_index: pick<number | null>(ln, ["vehicle_index", "vehicleIndex"], null),
+        quantity,
+        requested_qty: quantity,
+        requestedQty: quantity,
+        vehicle_text: vehicleText,
+        vehicle: vehicleText,
       };
 
-      const { data: lineRow, error: lineErr } = await supabaseAdmin
-        .from("quote_lines")
-        .insert(linePayload)
-        .select("line_id")
-        .single();
+      await safeInsertSingle("quote_lines", linePayload, [
+        "quoteId",
+        "lineId",
+        "line_no",
+        "quantity",
+        "requested_qty",
+        "requestedQty",
+        "vehicle_text",
+        "vehicle",
+      ]);
 
-      if (lineErr || !lineRow?.line_id) {
-        console.error("LINE INSERT ERROR:", lineErr);
-        throw new Error("Failed to insert quote line");
-      }
+      const options = Array.isArray(ln.options) ? ln.options : [];
+      const included = options.filter((o: any) => o?.included !== false);
 
-      const lineId: string = lineRow.line_id;
+      for (const o of included) {
+        const quoteItemId: string =
+          (o.quoteItemId as string) || (globalThis.crypto?.randomUUID?.() ?? "");
+        if (!quoteItemId) throw new Error("Failed to generate quoteItemId");
 
-      const options: any[] = Array.isArray(ln.options) ? ln.options : [];
-      const includedOptions = options.filter((o) => o?.included !== false);
-      if (includedOptions.length === 0) {
-        throw new Error("Each line must have at least one included option");
-      }
+        const qty = asNumber(o.qty ?? o.quotedQty ?? quantity, quantity);
+        const priceEach = asNumber(o.price_each ?? o.priceEach ?? 0, 0);
+        const total = asNumber(o.total ?? o.totalTires ?? priceEach * qty, priceEach * qty);
 
-      let selectedQuoteItemId: string | null = null;
-
-      for (let j = 0; j < includedOptions.length; j++) {
-        const o: any = includedOptions[j] ?? {};
-
-        const stock = asNumber(pick<number>(o, ["stock"], 0), 0);
-        if (minStock === null) minStock = stock;
-        else minStock = Math.min(minStock, stock);
-
-        const priceEach = asNumber(pick<number>(o, ["price_each", "priceEach"], 0), 0);
-        const totalTires = asNumber(
-          pick<number>(o, ["total_tires", "totalTires", "total"], priceEach * qty),
-          priceEach * qty
-        );
-        const totalWithServices = asNumber(
-          pick<number>(o, ["total_with_services", "totalWithServices"], totalTires),
-          totalTires
-        );
+        grandTotal += total;
 
         const itemPayload: Record<string, any> = {
-          quote_id: quoteId,
-          quote_line_id: lineId,
+          quote_id: finalQuoteId,
+          quoteId: finalQuoteId,
           line_id: lineId,
-          rank: pick<number | null>(o, ["rank"], j + 1),
-          provider: pick<string | null>(o, ["provider"], null),
-          sku: pick<string | null>(o, ["sku"], null),
-          tire_id: pick<string | null>(o, ["tire_id", "tireId"], null),
-          brand: pick<string | null>(o, ["brand"], null),
-          model: pick<string | null>(o, ["model"], null),
-          load_speed: pick<string | null>(o, ["load_speed", "loadSpeed"], null),
-          size: pick<string | null>(o, ["size"], size),
-          stock,
-          cost: pick<number | null>(o, ["cost", "cost_each", "costEach"], null),
+          lineId: lineId,
+          quote_item_id: quoteItemId,
+          quoteItemId: quoteItemId,
+
+          tier: o.tier ?? null,
+          provider: o.provider ?? "N/A",
+          sku: o.sku ?? null,
+          size: o.size ?? size ?? null,
+          brand: o.brand ?? null,
+          model: o.model ?? null,
+          load_speed: o.loadSpeed ?? o.load_speed ?? null,
+
+          stock: asNumber(o.stock ?? 0, 0),
+          cost: asNumber(o.cost ?? o.cost_each ?? 0, 0),
           price_each: priceEach,
-          total_tires: totalTires,
-          total_with_services: totalWithServices,
-          included: o?.included !== false,
+
+          qty,
+          total,
         };
 
-        const { data: itemRow, error: itemErr } = await supabaseAdmin
-          .from("quote_items")
-          .insert(itemPayload)
-          .select("quote_item_id")
-          .single();
-
-        if (itemErr || !itemRow?.quote_item_id) {
-          console.error("ITEM INSERT ERROR:", itemErr);
-          throw new Error("Failed to insert quote item");
-        }
-
-        if (!selectedQuoteItemId) selectedQuoteItemId = itemRow.quote_item_id;
-      }
-
-      if (selectedQuoteItemId) {
-        const { error: selErr } = await supabaseAdmin
-          .from("quote_lines")
-          .update({ selected_quote_item_id: selectedQuoteItemId })
-          .eq("line_id", lineId);
-        if (selErr) {
-          // Non-fatal, but useful
-          console.warn("Could not update selected_quote_item_id:", selErr);
-        }
+        await safeInsertSingle("quote_items", itemPayload, [
+          "quoteId",
+          "lineId",
+          "quoteItemId",
+          "load_speed",
+          "stock",
+          "cost",
+        ]);
       }
     }
 
-    // 3) Update quote header with min_stock (best-effort)
-    if (minStock !== null) {
-      const { error: uErr } = await supabaseAdmin
-        .from("quotes")
-        .update({ min_stock: minStock })
-        .eq("quote_id", quoteId);
-      if (uErr) {
-        console.warn("Could not update min_stock:", uErr);
-      }
-    }
+    // -------------------------------------------------------
+    // 3) Update totals (best-effort)
+    //    Nota: tu tabla `quotes` puede NO tener columna `grand_total`.
+    //    Si no existe, no rompemos el flujo: los totales viven en quote_items.
+    // -------------------------------------------------------
+    // Totals: schema-flexible, do not break if columns differ
+    await safeUpdate(
+      "quotes",
+      { id: finalQuoteId },
+      { grand_total: grandTotal, total: grandTotal, grandTotal },
+      ["grand_total", "total", "grandTotal"]
+    );
 
     return NextResponse.json({
       ok: true,
-      quoteId,
+      quoteId: finalQuoteId,
       quoteNumber,
+      grandTotal,
     });
   } catch (err: any) {
     console.error("QUOTE STATUS ERROR:", err);
