@@ -9,14 +9,11 @@ function fmtVehicle(q: any) {
 
 type SearchParams = { page?: string; pageSize?: string };
 
-// Next.js 15 types `searchParams` as a Promise in the generated `PageProps`.
-// Accept both (Promise and plain object) so it builds in all environments.
-export default async function QuotesPage({
-  searchParams,
-}: {
-  searchParams?: Promise<SearchParams> | SearchParams;
-}) {
-  const sp: SearchParams = searchParams ? await Promise.resolve(searchParams) : {};
+// Next.js 15's generated PageProps expects `searchParams` to be a Promise.
+// We'll keep the type compatible (Promise-only) and still safely handle
+// any runtime shape by wrapping with `Promise.resolve`.
+export default async function QuotesPage(props: { searchParams?: Promise<SearchParams> }) {
+  const sp: SearchParams = await Promise.resolve((props as any).searchParams ?? {});
   const page = Math.max(1, Number(sp.page ?? "1") || 1);
   const pageSize = Math.min(100, Math.max(5, Number(sp.pageSize ?? "20") || 20));
 
