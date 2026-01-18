@@ -17,8 +17,8 @@ export default async function QuotesPage(props: { searchParams?: Promise<SearchP
   const page = Math.max(1, Number(sp.page ?? "1") || 1);
   const pageSize = Math.min(100, Math.max(5, Number(sp.pageSize ?? "20") || 20));
 
-  const { data: quotes, count, page: currentPage, pageSize: currentPageSize } = await getQuotesPaged(page, pageSize);
-  const total = typeof count === "number" ? count : quotes.length;
+  // getQuotesPaged() returns { rows, total, page, pageSize }
+  const { rows: quotes, total, page: currentPage, pageSize: currentPageSize } = await getQuotesPaged(page, pageSize);
   const totalPages = Math.max(1, Math.ceil(total / currentPageSize));
   const hasPrev = currentPage > 1;
   const hasNext = currentPage < totalPages;
