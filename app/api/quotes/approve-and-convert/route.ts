@@ -20,7 +20,7 @@ function safeNum(v: any, fallback = 0) {
  * Approving a quote creates (or updates) a Work Order:
  * - quote.status must be SENT
  * - at least one line must have selected_quote_item_id
- * - creates/updates orders row (status: PENDING)
+ * - creates/updates orders row (status: DRAFT)
  * - (re)builds order_items from selected quote items
  * - sets quote.status = APPROVED and approved_at
  */
@@ -81,7 +81,10 @@ export async function POST(req: Request) {
       .upsert(
         {
           quote_id: quoteId,
-          status: "PENDING",
+          // orders.status is CHECK-constrained in the DB (see migrations).
+          // Valid values: DRAFT, ORDERED, RECEIVED, INSTALLED, CLOSED.
+          // A freshly-created work order should start as DRAFT.
+          status: "DRAFT",
           promised_at: quote.promised_at ?? null,
           internal_notes: quote.internal_notes ?? null,
           deposit_amount: quote.deposit_amount ?? null,
