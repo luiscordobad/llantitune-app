@@ -18,6 +18,7 @@ function mapQuote(r: QuoteRow) {
   const vehicleMake = pick(r, ["vehicle_make", "make"]);
   const vehicleModel = pick(r, ["vehicle_model", "model"]);
   const vehicleYear = pick(r, ["vehicle_year", "year"]);
+  const vehicleText = pick(r, ["vehicle_text", "vehicleText"]);
   const minStock = pick(r, ["min_stock", "minStock"]);
   const createdAt = pick(r, ["created_at", "createdAt"]);
 
@@ -30,6 +31,7 @@ function mapQuote(r: QuoteRow) {
     vehicle_make: vehicleMake,
     vehicle_model: vehicleModel,
     vehicle_year: vehicleYear,
+    vehicle_text: vehicleText,
     min_stock: minStock,
     created_at: createdAt,
     _raw: r,
