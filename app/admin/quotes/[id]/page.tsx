@@ -16,6 +16,37 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     .eq('quote_id', id)
     .single()
 
+  // Fetch lines to derive vehicle info when header fields are null.
+  const { data: lines } = await supabase
+    .from('quote_lines')
+    .select('line_id,quote_id,line_no,size,quantity,vehicle_make,vehicle_model,vehicle_year')
+    .eq('quote_id', id)
+    .order('line_no')
+
+  const headerVehicleText =
+    (quote as any)?.vehicle_text ??
+    [
+      (quote as any)?.vehicle_make,
+      (quote as any)?.vehicle_model,
+      (quote as any)?.vehicle_year,
+    ]
+      .filter(Boolean)
+      .join(' ')
+
+  const firstLineWithVehicle = (lines ?? []).find(
+    (l: any) => l?.vehicle_make || l?.vehicle_model || l?.vehicle_year
+  ) as any
+
+  const lineVehicleText = [
+    firstLineWithVehicle?.vehicle_make,
+    firstLineWithVehicle?.vehicle_model,
+    firstLineWithVehicle?.vehicle_year,
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const vehicleText = (headerVehicleText || lineVehicleText || null) as string | null
+
   const { data: items } = await supabase
     .from('quote_items')
     .select('*')
@@ -27,23 +58,6 @@ export default async function QuoteDetailPage({ params }: PageProps) {
   const isSent = quote?.status === 'SENT' || !!quote?.quote_number || !!quote?.quote_no
   const includedItems = (items ?? []).filter((i) => i.included)
   const hasSelectedItem = includedItems.length > 0
-
-  // Vehicle label fallback:
-  // 1) quotes.vehicle_make/model/year
-  // 2) quotes.vehicle_text
-  // 3) first quote_line vehicle_make/model/year
-  const headerVehicle = [quote?.vehicle_make, quote?.vehicle_model, quote?.vehicle_year]
-    .filter(Boolean)
-    .join(' ')
-  const firstWithVehicle = (lines ?? []).find(
-    (l) => (l as any).vehicle_make || (l as any).vehicle_model || (l as any).vehicle_year
-  ) as any
-  const firstLineVehicle = [firstWithVehicle?.vehicle_make, firstWithVehicle?.vehicle_model, firstWithVehicle?.vehicle_year]
-    .filter(Boolean)
-    .join(' ')
-  const vehicleLabel = headerVehicle || (quote?.vehicle_text ? String(quote.vehicle_text) : '') || firstLineVehicle || '—'
-
-  // vehicleLabel already computed above
 
   async function saveSelection(formData: FormData) {
     'use server'
@@ -60,7 +74,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
       <div style={{ color: '#666', marginTop: -6, marginBottom: 14 }}>
         Cliente: <b>{quote?.customer_email ?? '—'}</b> &nbsp;|&nbsp; Vehículo: {[
-          vehicleLabel,
+          vehicleText,
         ].filter(Boolean).join(' ') || '—'}
       </div>
 
