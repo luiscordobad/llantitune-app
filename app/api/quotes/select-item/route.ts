@@ -1,25 +1,30 @@
-
-import { createClient } from '@supabase/supabase-js'
-import { NextResponse } from 'next/server'
-
-export const runtime = 'nodejs'
+import { NextResponse } from "next/server";
+import { selectQuoteItem } from "@/lib/quotes/selectQuoteItem";
 
 export async function POST(req: Request) {
-  const { line_id, quote_item_id } = await req.json()
+  try {
+    const body = await req.json();
+    const quoteId = body.quote_id ?? body.quoteId;
+    const lineId = body.line_id ?? body.lineId;
+    const quoteItemId = body.quote_item_id ?? body.quoteItemId;
 
-  if (!line_id || !quote_item_id) {
-    return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
+    if (!quoteId || !lineId || !quoteItemId) {
+      return NextResponse.json(
+        { ok: false, error: "quote_id, line_id and quote_item_id are required" },
+        { status: 400 }
+      );
+    }
+
+    const res = await selectQuoteItem({ quoteId, lineId, quoteItemId });
+    if (!res.ok) {
+      return NextResponse.json({ ok: false, error: res.error }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    return NextResponse.json(
+      { ok: false, error: e?.message ?? "Unknown error" },
+      { status: 500 }
+    );
   }
-
-  const supabase = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-
-  await supabase
-    .from('quote_lines')
-    .update({ selected_quote_item_id: quote_item_id })
-    .eq('line_id', line_id)
-
-  return NextResponse.json({ ok: true })
 }
