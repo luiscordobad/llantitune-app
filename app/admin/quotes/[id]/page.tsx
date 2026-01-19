@@ -1,8 +1,6 @@
-import Link from 'next/link'
-import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { selectQuoteItem } from '@/lib/quotes/selectQuoteItem'
 import QuoteStatusActions from './quote-status-actions'
+import Link from 'next/link'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -122,18 +120,18 @@ export default async function QuoteDetailPage({ params }: PageProps) {
           </div>
         ) : linesList.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {includedItemsByLine.map(({ ln, items }) => {
+            {includedItemsByLine.map(({ line, items }) => {
               const lineVehicle = [
-                (ln as any).vehicle_make,
-                (ln as any).vehicle_model,
-                (ln as any).vehicle_year,
+                (line as any).vehicle_make,
+                (line as any).vehicle_model,
+                (line as any).vehicle_year,
               ]
                 .filter(Boolean)
                 .join(' ')
 
               return (
                 <div
-                  key={ln.line_id}
+                  key={(line as any).line_id}
                   style={{
                     border: '1px solid #e5e7eb',
                     borderRadius: 10,
@@ -143,7 +141,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                     <div style={{ fontWeight: 700 }}>
-                      Line {ln.line_no}: {ln.size} × {ln.quantity}
+                      Line {(line as any).line_no}: {(line as any).size} × {(line as any).quantity}
                     </div>
                     <div style={{ color: '#666' }}>{lineVehicle || vehicleText || '—'}</div>
                   </div>
