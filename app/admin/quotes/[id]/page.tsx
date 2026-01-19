@@ -322,6 +322,11 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
   return (
     <div style={{ padding: 24, maxWidth: 980, margin: '0 auto' }}>
+      {/* Single form so radio selections are available to both actions.
+          - Default submit => saveSelection
+          - Create Work Order button => approveSelected (via formAction)
+      */}
+      <form action={saveSelection}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
         <div>
           <h1 style={{ fontSize: 24, marginBottom: 6 }}>Cotización #{q.quote_number ?? q.quote_id}</h1>
@@ -338,15 +343,13 @@ export default async function QuoteDetailPage({ params }: PageProps) {
           >
             ← Back
           </Link>
-          <form action={approveSelected}>
-            {/* We rely on the radio inputs below being part of this form */}
-            <button
-              type="submit"
-              style={{ padding: '6px 10px', border: '1px solid #10b981', borderRadius: 6, background: '#10b981', color: 'white' }}
-            >
-              Create Work Order
-            </button>
-          </form>
+          <button
+            type="submit"
+            formAction={approveSelected}
+            style={{ padding: '6px 10px', border: '1px solid #10b981', borderRadius: 6, background: '#10b981', color: 'white' }}
+          >
+            Create Work Order
+          </button>
         </div>
       </div>
 
@@ -370,8 +373,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         {linesList.length === 0 ? (
           <div style={{ color: '#6b7280' }}>No lines found for this quote.</div>
         ) : (
-          <form action={saveSelection}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {linesList.map((ln) => {
                 const lineId = ln.line_id
                 const lineTitle = `Line ${ln.line_no}: ${ln.size} x${ln.quantity}`
@@ -449,7 +451,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
                 Guardar selección
               </button>
             </div>
-          </form>
+	          </div>
         )}
       </div>
 
@@ -460,6 +462,8 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         quote_lines.selected_quote_item_id, mark only that option as included, and insert a new record in orders +
         order_items.
       </div>
+
+      </form>
     </div>
   )
 }
