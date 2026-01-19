@@ -12,6 +12,37 @@ function generateQuoteNumber() {
   return `LT-${y}${m}${day}-${t}`;
 }
 
+// Try to parse a vehicle string like "Ford Explorer 2014".
+// We treat the last token as the year if it looks like YYYY.
+function parseVehicle(vehicle: unknown): {
+  make: string | null;
+  model: string | null;
+  year: number | null;
+  text: string | null;
+} {
+  if (typeof vehicle !== "string") {
+    return { make: null, model: null, year: null, text: null };
+  }
+  const raw = vehicle.trim();
+  if (!raw) return { make: null, model: null, year: null, text: null };
+
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { make: null, model: null, year: null, text: null };
+
+  const last = parts[parts.length - 1];
+  let year: number | null = null;
+  if (/^(19|20)\d{2}$/.test(last)) {
+    year = Number(last);
+    parts.pop();
+  }
+
+  const make = parts.length >= 1 ? parts[0] : null;
+  const model = parts.length >= 2 ? parts.slice(1).join(" ") : null;
+
+  const text = [make, model, year ? String(year) : null].filter(Boolean).join(" ") || raw;
+  return { make, model, year, text };
+}
+
 function generateQuoteNo(): number {
   // Your schema has `quotes.quote_no BIGINT NOT NULL` with no default.
   // `Date.now()` fits safely in JS number precision and in Postgres BIGINT.
@@ -266,34 +297,31 @@ export async function POST(req: Request) {
     }
 
     // Create quote row if it doesn't exist; otherwise update header basics.
-    // NOTE: The Step-4 UI currently sends vehicle info inside `draft.lines[].vehicle`
-    // (NOT in `draft.vehicle_text`). We derive it here so the Admin "Cotizaciones" list
-    // can show vehicle details for recent quotes.
-    const firstLine: any = Array.isArray((draft as any).lines)
-      ? (draft as any).lines.find((x: any) => x && (x.vehicle || x.vehicle_text || x.vehicleText)) ?? (draft as any).lines[0]
-      : null;
-
-    const headerVehicleText: string | null =
-      ((draft as any).vehicle_text ?? (draft as any).vehicleText ?? null) ??
-      ((firstLine?.vehicle_text ?? firstLine?.vehicleText ?? firstLine?.vehicle ?? null) ? String(firstLine?.vehicle_text ?? firstLine?.vehicleText ?? firstLine?.vehicle).trim() : null);
-
-    // Very small parser for strings like: "Ford Explorer 2014".
-    // If we can't parse, we keep these as null.
-    let headerVehicleMake: string | null = (draft as any).vehicle_make ?? (draft as any).vehicleMake ?? null;
-    let headerVehicleModel: string | null = (draft as any).vehicle_model ?? (draft as any).vehicleModel ?? null;
-    let headerVehicleYear: number | null = (draft as any).vehicle_year ?? (draft as any).vehicleYear ?? null;
-    if ((!headerVehicleMake || !headerVehicleModel || !headerVehicleYear) && headerVehicleText) {
-      const parts = headerVehicleText.split(/\s+/).filter(Boolean);
-      const last = parts[parts.length - 1];
-      const maybeYear = Number(last);
-      if (Number.isFinite(maybeYear) && maybeYear > 1900 && maybeYear < 2100) {
-        headerVehicleYear = headerVehicleYear ?? maybeYear;
-        headerVehicleMake = headerVehicleMake ?? (parts[0] ?? null);
-        headerVehicleModel = headerVehicleModel ?? (parts.slice(1, -1).join(" ") || null);
-      }
-    }
-
+    // NOTE: Some deployments don't have columns like `vehicle_text` or even `quote_id`.
     // We retry without optional columns so the API doesn't 500.
+
+    // --- Vehicle fields (workaround) ---
+    // The Step-4 payload usually sends vehicle inside each line (e.g. "Ford Explorer 2014")
+    // and NOT at top-level. Older code expected draft.vehicle_text / vehicleMake.
+    // We derive a sane header vehicle_* / vehicle_text from the first line.
+    const firstLineVehicleRaw =
+      (Array.isArray((draft as any).lines) && (draft as any).lines[0]
+        ? ((draft as any).lines[0] as any).vehicle
+        : null) ?? null;
+    const parsedVehicle = parseVehicle(firstLineVehicleRaw);
+
+    const vehicleMake =
+      pick<string | null>(draft, ["vehicle_make", "vehicleMake"], null) ??
+      parsedVehicle.make;
+    const vehicleModel =
+      pick<string | null>(draft, ["vehicle_model", "vehicleModel"], null) ??
+      parsedVehicle.model;
+    const vehicleYear =
+      pick<number | null>(draft, ["vehicle_year", "vehicleYear"], null) ??
+      parsedVehicle.year;
+    const vehicleText =
+      pick<string | null>(draft, ["vehicle_text", "vehicleText"], null) ??
+      parsedVehicle.text;
     const headerPayload: Record<string, any> = {
       // In your Supabase schema, the PK is `quote_id` (not `id`).
       quote_id: finalQuoteId,
@@ -302,10 +330,10 @@ export async function POST(req: Request) {
       customer_name: draft.customer_name ?? draft.customerName ?? null,
       customer_phone: draft.customer_phone ?? draft.customerPhone ?? null,
       customer_email: draft.customer_email ?? draft.customerEmail ?? null,
-      vehicle_text: headerVehicleText,
-      vehicle_make: headerVehicleMake,
-      vehicle_model: headerVehicleModel,
-      vehicle_year: headerVehicleYear,
+      vehicle_text: vehicleText,
+      vehicle_make: vehicleMake,
+      vehicle_model: vehicleModel,
+      vehicle_year: vehicleYear,
     };
 
     if (!existing) {
@@ -351,13 +379,11 @@ export async function POST(req: Request) {
 
       const quantity = asNumber(ln.requestedQty ?? ln.requested_qty ?? ln.requested_qty ?? ln.qty ?? 1, 1);
 
-      // Parse vehicle text like: "Ford Explorer 2014" (best-effort)
-      const vehicleText: string = String(ln.vehicle ?? ln.vehicleText ?? "").trim();
-      const parts = vehicleText.split(/\s+/).filter(Boolean);
-      const maybeYear = parts.length ? Number(parts[parts.length - 1]) : NaN;
-      const vehicle_year = Number.isFinite(maybeYear) ? maybeYear : null;
-      const vehicle_make = parts.length ? parts[0] : null;
-      const vehicle_model = parts.length >= 3 ? parts.slice(1, -1).join(" ") : parts.length >= 2 ? parts.slice(1).join(" ") : null;
+      // Vehicle fields: derive from `ln.vehicle` (preferred) with a best-effort parser.
+      const parsedLineVehicle = parseVehicle(ln.vehicle ?? ln.vehicleText ?? null);
+      const vehicle_make = parsedLineVehicle.make;
+      const vehicle_model = parsedLineVehicle.model;
+      const vehicle_year = parsedLineVehicle.year;
 
       // Insert quote_lines and capture the real line_id generated by Postgres
       const { data: insertedLine, error: lineErr } = await supabaseAdmin

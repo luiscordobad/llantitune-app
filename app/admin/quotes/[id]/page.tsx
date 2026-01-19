@@ -28,6 +28,23 @@ export default async function QuoteDetailPage({ params }: PageProps) {
   const includedItems = (items ?? []).filter((i) => i.included)
   const hasSelectedItem = includedItems.length > 0
 
+  // Vehicle label fallback:
+  // 1) quotes.vehicle_make/model/year
+  // 2) quotes.vehicle_text
+  // 3) first quote_line vehicle_make/model/year
+  const headerVehicle = [quote?.vehicle_make, quote?.vehicle_model, quote?.vehicle_year]
+    .filter(Boolean)
+    .join(' ')
+  const firstWithVehicle = (lines ?? []).find(
+    (l) => (l as any).vehicle_make || (l as any).vehicle_model || (l as any).vehicle_year
+  ) as any
+  const firstLineVehicle = [firstWithVehicle?.vehicle_make, firstWithVehicle?.vehicle_model, firstWithVehicle?.vehicle_year]
+    .filter(Boolean)
+    .join(' ')
+  const vehicleLabel = headerVehicle || (quote?.vehicle_text ? String(quote.vehicle_text) : '') || firstLineVehicle || '—'
+
+  // vehicleLabel already computed above
+
   async function saveSelection(formData: FormData) {
     'use server'
     if (!isSent) return
@@ -43,9 +60,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
       <div style={{ color: '#666', marginTop: -6, marginBottom: 14 }}>
         Cliente: <b>{quote?.customer_email ?? '—'}</b> &nbsp;|&nbsp; Vehículo: {[
-          quote?.vehicle_make,
-          quote?.vehicle_model,
-          quote?.vehicle_year,
+          vehicleLabel,
         ].filter(Boolean).join(' ') || '—'}
       </div>
 

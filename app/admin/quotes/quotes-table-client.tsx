@@ -17,13 +17,10 @@ type Props = {
 }
 
 function fmtVehicle(q: AnyRow) {
-  // Prefer the denormalized text stored on the quote header (filled by /api/admin/quote/status)
-  // because quote_lines may not store vehicle_* for newer drafts.
-  const vehicleText = q.vehicle_text ?? q.vehicleText ?? null
-  if (typeof vehicleText === 'string' && vehicleText.trim()) return vehicleText.trim()
-
   const parts = [q.vehicle_make, q.vehicle_model, q.vehicle_year].filter(Boolean)
-  return parts.length ? parts.join(' ') : '—'
+  if (parts.length) return parts.join(' ')
+  // Fallback for older/newer rows where we store a single vehicle_text
+  return q.vehicle_text ? String(q.vehicle_text) : '—'
 }
 
 export default function QuotesTableClient(props: Props) {
