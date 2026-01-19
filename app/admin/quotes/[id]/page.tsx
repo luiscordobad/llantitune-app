@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { selectQuoteItem } from '@/lib/quotes/selectQuoteItem'
+import QuoteStatusActions from './quote-status-actions'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -57,72 +58,149 @@ export default async function QuoteDetailPage({ params }: PageProps) {
   // is the best signal that the quote was "sent"/final.
   const isSent = quote?.status === 'SENT' || !!quote?.quote_number || !!quote?.quote_no
   const includedItems = (items ?? []).filter((i) => i.included)
-  const hasSelectedItem = includedItems.length > 0
 
-  async function saveSelection(formData: FormData) {
-    'use server'
-    if (!isSent) return
-    const selected = formData.get('selected_item') as string | null
-    if (!selected) return
-    await selectQuoteItem(id, selected)
-    redirect(`/admin/quotes/${id}`)
-  }
+  const linesList = (lines ?? []) as any[]
+  const itemsList = (items ?? []) as any[]
+
+  const includedItemsByLine = linesList.map((ln) => {
+    const lineId = ln?.line_id
+    const lineItems = itemsList.filter(
+      (it) =>
+        it?.included &&
+        (it?.quote_line_id === lineId || it?.line_id === lineId)
+    )
+    return { line: ln, items: lineItems }
+  })
+
+  const includedGrandTotal = includedItems.reduce((sum: number, it: any) => {
+    const v =
+      Number(it?.total_with_services ?? it?.total ?? it?.total_tires ?? 0) || 0
+    return sum + v
+  }, 0)
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto' }}>
-      <h1>Cotización #{quote?.quote_number ?? quote?.quote_no ?? id}</h1>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          marginTop: 14,
+        }}
+      >
+        <div>
+          <h1 style={{ margin: 0 }}>Cotización #{quote?.quote_number ?? quote?.quote_no ?? id}</h1>
+          <div style={{ color: '#666', marginTop: 6 }}>
+            Cliente: <b>{quote?.customer_name ?? quote?.customer_email ?? '—'}</b>
+            &nbsp;|&nbsp; Vehículo: {vehicleText || '—'}
+            &nbsp;|&nbsp; Estatus: <b>{quote?.status ?? '—'}</b>
+          </div>
+        </div>
 
-      <div style={{ color: '#666', marginTop: -6, marginBottom: 14 }}>
-        Cliente: <b>{quote?.customer_email ?? '—'}</b> &nbsp;|&nbsp; Vehículo: {[
-          vehicleText,
-        ].filter(Boolean).join(' ') || '—'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Link href="/admin/quotes" style={{ textDecoration: 'none' }}>← Back</Link>
+          <QuoteStatusActions quoteId={id} currentStatus={quote?.status ?? null} />
+        </div>
       </div>
 
-      <form action={saveSelection}>
-        {includedItems.length === 0 && (
+      <div style={{ marginTop: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <h2 style={{ margin: 0 }}>Included options</h2>
+          <div style={{ color: '#111', fontWeight: 700 }}>
+            Total: ${includedGrandTotal.toFixed(2)}
+          </div>
+        </div>
+        <p style={{ color: '#666', marginTop: 6 }}>
+          Showing only options marked as <b>included</b>.
+        </p>
+
+        {includedItems.length === 0 ? (
           <div style={{ padding: 12, background: '#fff7ed', borderRadius: 8, border: '1px solid #fed7aa' }}>
             No hay opciones <b>incluidas</b> guardadas para esta cotización.
           </div>
+        ) : linesList.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {includedItemsByLine.map(({ ln, items }) => {
+              const lineVehicle = [
+                (ln as any).vehicle_make,
+                (ln as any).vehicle_model,
+                (ln as any).vehicle_year,
+              ]
+                .filter(Boolean)
+                .join(' ')
+
+              return (
+                <div
+                  key={ln.line_id}
+                  style={{
+                    border: '1px solid #e5e7eb',
+                    borderRadius: 10,
+                    padding: 12,
+                    background: '#fff',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                    <div style={{ fontWeight: 700 }}>
+                      Line {ln.line_no}: {ln.size} × {ln.quantity}
+                    </div>
+                    <div style={{ color: '#666' }}>{lineVehicle || vehicleText || '—'}</div>
+                  </div>
+
+                  {items.length === 0 ? (
+                    <div style={{ marginTop: 8, color: '#666' }}>No included options for this line.</div>
+                  ) : (
+                    <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {items.map((it: any) => {
+                        const amount = Number(
+                          it.total_with_services ?? it.total ?? it.total_tires ?? it.price_each ?? 0
+                        )
+                        return (
+                          <div key={it.quote_item_id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                            <div>
+                              <div style={{ fontWeight: 700 }}>
+                                {it.brand} {it.model}
+                              </div>
+                              <div style={{ color: '#666', fontSize: 13 }}>
+                                {it.provider ? `Provider: ${it.provider}` : 'Provider: —'}
+                                {it.sku ? ` • SKU: ${it.sku}` : ''}
+                              </div>
+                            </div>
+                            <div style={{ fontWeight: 700 }}>${amount.toFixed(2)}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {includedItems.map((it: any) => {
+              const amount = Number(it.total_with_services ?? it.total ?? it.total_tires ?? it.price_each ?? 0)
+              return (
+                <div
+                  key={it.quote_item_id}
+                  style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 12, background: '#fff' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                    <div style={{ fontWeight: 700 }}>
+                      {it.brand} {it.model}
+                    </div>
+                    <div style={{ fontWeight: 700 }}>${amount.toFixed(2)}</div>
+                  </div>
+                  <div style={{ color: '#666', fontSize: 13, marginTop: 4 }}>
+                    {it.provider ? `Provider: ${it.provider}` : 'Provider: —'}
+                    {it.sku ? ` • SKU: ${it.sku}` : ''}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         )}
-
-        {includedItems.map(item => (
-          <label
-            key={item.quote_item_id}
-            style={{
-              display: 'block',
-              marginBottom: 12,
-              opacity: 1,
-            }}
-          >
-            <input
-              type="radio"
-              name="selected_item"
-              value={item.quote_item_id}
-              defaultChecked={item.included === true}
-              disabled={!isSent}
-            />
-            {item.brand} {item.model} — ${
-              Number(
-                item.total_with_services ?? item.total ?? item.total_tires ?? item.price_each ?? 0
-              ).toFixed(2)
-            }
-          </label>
-        ))}
-
-        {isSent && (
-          <button type="submit" style={{ marginTop: 16 }}>
-            Guardar selección
-          </button>
-        )}
-      </form>
-
-      {isSent && hasSelectedItem && (
-        <form action={`/admin/quotes/${id}/approve`} method="post">
-          <button style={{ marginTop: 24 }}>
-            Aprobar cotización
-          </button>
-        </form>
-      )}
+      </div>
     </div>
   )
 }

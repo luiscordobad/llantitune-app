@@ -15,16 +15,49 @@ export default async function QuotesPage(props: any) {
 
   const page = Math.max(1, toInt(sp.page, 1));
   const pageSize = Math.min(100, Math.max(5, toInt(sp.pageSize, 20)));
+  const status = (Array.isArray(sp.status) ? sp.status[0] : sp.status) as
+    | string
+    | undefined;
+  const q = (Array.isArray(sp.q) ? sp.q[0] : sp.q) as string | undefined;
 
   const { rows: quotes, total, page: currentPage, pageSize: currentPageSize } =
-    await getQuotesPaged({ page, pageSize });
+    await getQuotesPaged({ page, pageSize, status, q });
 
   const totalPages = Math.max(1, Math.ceil(total / currentPageSize));
   const hasPrev = currentPage > 1;
   const hasNext = currentPage < totalPages;
 
-  const mkUrl = (p: number, ps = currentPageSize) =>
-    `/admin/quotes?page=${p}&pageSize=${ps}`;
+  const mkUrl = (p: number, ps = currentPageSize) => {
+    const params = new URLSearchParams();
+    params.set("page", String(p));
+    params.set("pageSize", String(ps));
+    if (status && status !== "ALL") params.set("status", status);
+    if (q && q.trim()) params.set("q", q.trim());
+    return `/admin/quotes?${params.toString()}`;
+  };
+
+  const visiblePages = (() => {
+    // Keep pager compact: show up to 7 buttons around current page.
+    const pages: (number | "…")[] = [];
+    const max = totalPages;
+    const cur = currentPage;
+    const push = (x: number | "…") => {
+      if (pages[pages.length - 1] !== x) pages.push(x);
+    };
+    const range = (a: number, b: number) => {
+      for (let i = a; i <= b; i++) push(i);
+    };
+    if (max <= 9) {
+      range(1, max);
+      return pages;
+    }
+    push(1);
+    if (cur > 4) push("…");
+    range(Math.max(2, cur - 2), Math.min(max - 1, cur + 2));
+    if (cur < max - 3) push("…");
+    push(max);
+    return pages;
+  })();
 
   return (
     <div className="p-6">
@@ -36,25 +69,68 @@ export default async function QuotesPage(props: any) {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="text-sm text-gray-600">Page size</div>
-          <div className="flex items-center gap-1">
-            {[10, 20, 50].map((ps) => (
-              <Link
-                key={ps}
-                href={mkUrl(1, ps)}
-                className={
-                  "px-2 py-1 rounded border text-sm " +
-                  (ps === currentPageSize
-                    ? "bg-black text-white border-black"
-                    : "bg-white text-gray-700 hover:bg-gray-50")
-                }
-              >
-                {ps}
-              </Link>
-            ))}
+        <form className="flex flex-wrap items-end gap-2" method="get">
+          <input type="hidden" name="page" value="1" />
+
+          <div className="flex flex-col">
+            <label className="text-xs text-gray-600">Search</label>
+            <input
+              name="q"
+              defaultValue={q ?? ""}
+              placeholder="Quote #, customer, email, vehicle"
+              className="px-3 py-2 border rounded-lg text-sm w-64"
+            />
           </div>
-        </div>
+
+          <div className="flex flex-col">
+            <label className="text-xs text-gray-600">Status</label>
+            <select
+              name="status"
+              defaultValue={status ?? "ALL"}
+              className="px-3 py-2 border rounded-lg text-sm"
+            >
+              {[
+                "ALL",
+                "DRAFT",
+                "SENT",
+                "APPROVED",
+                "REJECTED",
+              ].map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col">
+            <label className="text-xs text-gray-600">Page size</label>
+            <select
+              name="pageSize"
+              defaultValue={String(currentPageSize)}
+              className="px-3 py-2 border rounded-lg text-sm"
+            >
+              {[10, 20, 50, 100].map((ps) => (
+                <option key={ps} value={ps}>
+                  {ps}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button className="px-4 py-2 rounded-lg bg-black text-white text-sm hover:opacity-90">
+            Apply
+          </button>
+
+          {(status && status !== "ALL") || (q && q.trim()) ? (
+            <Link
+              href={mkUrl(1, currentPageSize)}
+              className="px-4 py-2 rounded-lg border text-sm hover:bg-gray-50"
+            >
+              Clear
+            </Link>
+          ) : null}
+        </form>
       </div>
 
       <div className="overflow-x-auto border rounded-xl">
@@ -126,7 +202,7 @@ export default async function QuotesPage(props: any) {
           Page {currentPage} of {totalPages}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <Link
             href={mkUrl(1)}
             className={
@@ -149,6 +225,29 @@ export default async function QuotesPage(props: any) {
           >
             Prev
           </Link>
+
+          <div className="hidden sm:flex items-center gap-1">
+            {visiblePages.map((p, idx) =>
+              p === "…" ? (
+                <span key={`e${idx}`} className="px-2 text-gray-500">
+                  …
+                </span>
+              ) : (
+                <Link
+                  key={p}
+                  href={mkUrl(p)}
+                  className={
+                    "px-3 py-1.5 rounded border text-sm " +
+                    (p === currentPage
+                      ? "bg-black text-white border-black"
+                      : "hover:bg-gray-50")
+                  }
+                >
+                  {p}
+                </Link>
+              )
+            )}
+          </div>
           <Link
             href={mkUrl(currentPage + 1)}
             className={

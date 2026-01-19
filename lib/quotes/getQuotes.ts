@@ -2,6 +2,12 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export type QuoteRow = Record<string, any>;
 
+function safeIlikeTerm(raw: string) {
+  // PostgREST `.or()` filter string is comma-separated; keep it simple.
+  // We mainly need to avoid breaking the filter syntax.
+  return raw.trim().replace(/%/g, "\\%").replace(/,/g, " ");
+}
+
 function pick<T extends QuoteRow>(row: T, keys: string[]) {
   for (const k of keys) {
     if (row && Object.prototype.hasOwnProperty.call(row, k)) return row[k];
@@ -60,14 +66,48 @@ async function applyBestOrdering<T>(
   return res;
 }
 
-export async function getQuotesPaged(params: { page?: number; pageSize?: number } = {}) {
+export async function getQuotesPaged(
+  params: {
+    page?: number;
+    pageSize?: number;
+    status?: string; // DRAFT | SENT | APPROVED | REJECTED | ALL
+    q?: string; // free text search
+  } = {}
+) {
   const page = Math.max(1, params.page ?? 1);
   const pageSize = Math.min(200, Math.max(5, params.pageSize ?? 25));
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
+  const status = (params.status ?? "").trim();
+  const q = (params.q ?? "").trim();
+
   // We select "*" to be schema-tolerant, but we also ask for an exact count so we can paginate.
-  const make = () => supabaseAdmin.from("quotes").select("*", { count: "exact" }).range(from, to);
+  const make = () => {
+    let query = supabaseAdmin
+      .from("quotes")
+      .select("*", { count: "exact" })
+      .range(from, to);
+
+    if (status && status !== "ALL") {
+      query = query.eq("status", status as any);
+    }
+
+    if (q) {
+      const t = safeIlikeTerm(q);
+      // Prefer quote_number, customer_name, customer_email, vehicle_text.
+      query = query.or(
+        [
+          `quote_number.ilike.%${t}%`,
+          `customer_name.ilike.%${t}%`,
+          `customer_email.ilike.%${t}%`,
+          `vehicle_text.ilike.%${t}%`,
+        ].join(",")
+      );
+    }
+
+    return query;
+  };
 
   const res = await applyBestOrdering<QuoteRow>(make);
   if (res.error) throw res.error;
