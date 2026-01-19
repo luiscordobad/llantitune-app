@@ -17,7 +17,8 @@ export async function POST(req: Request) {
 
     const res = await selectQuoteItem({ quoteId, lineId, quoteItemId });
     if (!res.ok) {
-      return NextResponse.json({ ok: false, error: res.error }, { status: 500 });
+      const errMsg = (res as any)?.error ?? "Failed to select quote item";
+      return NextResponse.json({ ok: false, error: errMsg }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true });
