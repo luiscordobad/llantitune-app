@@ -76,14 +76,12 @@ export async function POST(req: Request) {
     for (const it of items ?? []) itemById.set(String(it.quote_item_id), it);
 
     // Upsert order header (unassigned by default)
+    // NOTE: orders.status is CHECK-constrained in DB (see migrations). Use a valid value.
     const { data: order, error: oErr } = await supabaseAdmin
       .from("orders")
       .upsert(
         {
           quote_id: quoteId,
-          // orders.status is CHECK-constrained in the DB (see migrations).
-          // Valid values: DRAFT, ORDERED, RECEIVED, INSTALLED, CLOSED.
-          // A freshly-created work order should start as DRAFT.
           status: "DRAFT",
           promised_at: quote.promised_at ?? null,
           internal_notes: quote.internal_notes ?? null,
@@ -160,7 +158,7 @@ export async function POST(req: Request) {
           entity_id: orderId,
           event_type: "CREATED_FROM_QUOTE",
           from_status: null,
-          to_status: "PENDING",
+          to_status: "DRAFT",
           note: null,
           created_by: user.id,
         },
